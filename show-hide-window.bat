@@ -1,0 +1,1 @@
+program\autoit-v3\install\AutoIt3.exe program\show-hide-window.au3 marketplaces

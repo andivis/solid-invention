@@ -182,6 +182,9 @@ class Craigslist:
         return results
     
     def search(self, onItemIndex, site, item, database, averageSellingPrice):
+        if not averageSellingPrice:
+            return
+
         i = 0
 
         keyword = item.get('keyword', '')
@@ -194,7 +197,8 @@ class Craigslist:
         maximumPrice = item.get('max price', '')
         maximumPrice = int(maximumPrice)
         
-        category = item.get('craigslist category', '')
+        # sss means all for sale
+        category = item.get('craigslist category', 'sss')
 
         minimumPercentageDifference = item.get('min percentage difference', 100.0)
         minimumPercentageDifference = float(minimumPercentageDifference)
@@ -275,11 +279,17 @@ class Marketplaces:
 
             try:
                 self.lookUpItem(site, item)
+
+                if not self.averageSellingPrice:
+                    logging.error(f'Skipping. Did not find average selling price.')
+                    continue
+
                 self.addToReport(item)
                 self.markDone(site, item)
                 self.waitBetween()
             except Exception as e:
                 logging.error(f'Skipping. Something went wrong.')
+                logging.error(e)
 
     def lookUpItem(self, site, item):
         if 'checkaflip' in site:
@@ -287,6 +297,8 @@ class Marketplaces:
 
             self.averageSellingPrice = self.checkaflip.search(self.onItemIndex, site, item, self.database)
         elif 'craigslist' in site:
+            self.getAverageSellingPrice(item)
+
             self.craigslist.search(self.onItemIndex, site, item, self.database, self.averageSellingPrice)
 
     def showStatus(self, row):
@@ -295,6 +307,21 @@ class Marketplaces:
         logging.info(f'On item {self.onItemIndex + 1}: {keyword}')
         
         self.onItemIndex += 1
+
+    def getAverageSellingPrice(self, item):
+        # already have it?
+        if self.averageSellingPrice:
+            return
+
+        # get from database
+        keyword = item.get('keyword', '')
+        hours = item.get('hours between runs', '')
+
+        minimumDate = helpers.getDateStringSecondsAgo(int(hours) * 60 * 60, True)
+
+        row = self.database.getFirst('result', 'price', f"siteName= 'checkaflip.com' and keyword = '{keyword}' and gmDate >= '{minimumDate}'", '', '')
+
+        self.averageSellingPrice = row.get('price', '')
 
     def isDone(self, site, item):
         result = False;

@@ -1,0 +1,1 @@
+dist\marketplaces\marketplaces.exe --debug
