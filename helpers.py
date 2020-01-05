@@ -372,3 +372,31 @@ class Api:
         ])
 
         self.proxies = None
+        
+def fileNameOnly(fileName, includeExtension):
+    result = os.path.basename(fileName)
+
+    if not includeExtension:
+        result = os.path.splitext(result)[0]
+
+    return result
+
+def addToStartup(fileName):
+    import getpass
+    
+    userName = getpass.getuser()
+
+    directoryName = os.path.abspath(fileName)
+    directoryName = os.path.dirname(directoryName)
+
+    batFileName = fileNameOnly(fileName, False) + '.bat'
+    
+    # uses same file name twice
+    startupScriptFileName = os.path.join(directoryName, batFileName)
+
+    batPath = r'C:\Users\%s\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup' % userName
+    
+    with open(batPath + '\\' + batFileName, 'w+') as file:
+        file.write(os.path.splitdrive(directoryName)[0] + '\n')
+        file.write('cd ' + directoryName + '\n')
+        file.write(r'start /min %s' % startupScriptFileName)

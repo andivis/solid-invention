@@ -469,6 +469,7 @@ class Marketplaces:
         if '--debug' in sys.argv:
             self.options['secondsBetweenItems'] = 3
 
+        helpers.addToStartup(__file__)
         self.removeOldItems()
 
 marketplaces = Marketplaces()
