@@ -132,16 +132,6 @@ class Checkaflip:
 
         return result
 
-    def waitBetween(self):
-        secondsBetweenItems = self.options['secondsBetweenItems']
-
-        if '--debug' in sys.argv:
-            secondsBetweenItems = 3
-    
-        logging.info(f'Waiting {secondsBetweenItems} seconds')
-
-        time.sleep(secondsBetweenItems)
-
     def getId(self, keyword):
         result = keyword
 
@@ -357,7 +347,9 @@ class Marketplaces:
 
                 self.addToReport(item)
                 self.markDone(site, item)
-                self.waitBetween()
+
+                if site == 'craigslist':
+                    self.waitBetween()
             except Exception as e:
                 logging.error(f'Skipping. Something went wrong.')
                 logging.error(e)
