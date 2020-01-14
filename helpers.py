@@ -329,7 +329,7 @@ class Api:
         try:
             logging.debug(f'Get {url}')
 
-            response = requests.get(self.urlPrefix + url, headers=self.headers, proxies=self.proxies)
+            response = requests.get(self.urlPrefix + url, headers=self.headers, proxies=self.proxies, timeout=30)
 
             result = json.loads(response.text)
         except Exception as e:
@@ -345,7 +345,7 @@ class Api:
         try:
             logging.debug(f'Post {url}')
 
-            response = requests.post(self.urlPrefix + url, headers=self.headers, proxies=self.proxies, data=data)
+            response = requests.post(self.urlPrefix + url, headers=self.headers, proxies=self.proxies, data=data, timeout=30)
 
             result = json.loads(response.text)
         except Exception as e:

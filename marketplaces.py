@@ -78,15 +78,19 @@ class Checkaflip:
             logging.error('Stopping. Wrong or no response.')
             return
 
-        price = response.get('slot1', '')
+        # to avoid items that are not what the user wants
+        topItems = self.getTopPercentOfItems(response, 50, 'itemCurrentPrice')
 
-        if price == '':
+        sumOfPrices = float(sum(d['itemCurrentPrice'] for d in topItems))
+        averagePrice = sumOfPrices / len(topItems)
+        averagePrice = int(round(averagePrice))
+
+        if averagePrice < 1:
             logging.error('Stopping. Wrong or no response.')
             return
 
-        price = int(price)
-
         jsonColumn = {
+            'averagePrice': response.get('slot1', ''),
             'sellThroughRate': response.get('slot2', '')
         }
 
@@ -95,7 +99,7 @@ class Checkaflip:
             'idInWebsite': self.getId(keyword),
             'keyword': item.get('keyword', ''),
             'gmDate': str(datetime.datetime.utcnow()),
-            'price': price,
+            'price': averagePrice,
             'json': json.dumps(jsonColumn)
         }
     
@@ -104,16 +108,36 @@ class Checkaflip:
             return
 
         sellThroughRate = jsonColumn.get('sellThroughRate', '')
-        logging.info(f'Price: {price}. Sell through rate: {sellThroughRate}.')
+        logging.info(f'Site: checkaflip.com. Keyword: {keyword}. Average price of top 50%: {averagePrice}. Sell through rate: {sellThroughRate}.')
 
         database.insert('result', newItem)
 
         # will use it later to filter search results
-        return price
+        return averagePrice
+
+    def getTopPercentOfItems(self, j, percent, keyName):
+        result = []
+
+        list = j.get('slot3', '')
+
+        if not list:
+            return result
+
+        newList = sorted(list, key=lambda k: k[keyName])
+
+        cutoff = len(newList) * (percent / 100)
+        cutoff = int(cutoff)
+
+        result = newList[cutoff:]
+
+        return result
 
     def waitBetween(self):
         secondsBetweenItems = self.options['secondsBetweenItems']
 
+        if '--debug' in sys.argv:
+            secondsBetweenItems = 3
+    
         logging.info(f'Waiting {secondsBetweenItems} seconds')
 
         time.sleep(secondsBetweenItems)
@@ -193,22 +217,18 @@ class Craigslist:
         
         minimumPrice = item.get('min price', '')
         minimumPrice = int(minimumPrice)
-        
-        maximumPrice = item.get('max price', '')
-        maximumPrice = int(maximumPrice)
-        
+
+        # don't want to items that cost more than the selling price
         # sss means all for sale
         category = item.get('craigslist category', 'sss')
 
-        minimumPercentageDifference = item.get('min percentage difference', 100.0)
-        minimumPercentageDifference = float(minimumPercentageDifference)
-        minimumPercentageDifference = minimumPercentageDifference / 100.0
+        minimumPercentageDifference = item.get('min percentage difference', 10)
+        minimumPercentageDifference = float(minimumPercentageDifference) / 100
 
-        priceWant = averageSellingPrice * (1.0 - minimumPercentageDifference)
-        priceWant = int(priceWant)
+        priceWant = averageSellingPrice * (1 - minimumPercentageDifference)
+        priceWant = int(round(priceWant))
 
-        if priceWant < maximumPrice:
-            maximumPrice = priceWant
+        maximumPrice = priceWant
 
         if priceWant < minimumPrice:
             minimumPrice = 1
@@ -216,7 +236,7 @@ class Craigslist:
         for city in self.siteInformation['cities']:
             cityName = city.get('name', '');
 
-            logging.info(f'Keyword {onItemIndex}: {keyword}. Site: craigslist. City {i + 1}: {cityName}.')
+            logging.info(f'Keyword {onItemIndex}: {keyword}. Site: craigslist. City {i + 1}: {cityName}. Price: {minimumPrice} to {maximumPrice}.')
             i += 1
 
             urlToGet = city.get('url', '')
@@ -226,12 +246,63 @@ class Craigslist:
             items = self.getResults(site, item, page)
 
             for newItem in items:
+                if not self.matchesMustContain(item, newItem):
+                    continue
+
                 database.insert('result', newItem)
 
             self.waitBetween()
 
+    def containsCaseInsensitive(self, listOfPhrases, s):
+        result = False
+
+        if not listOfPhrases:
+            return True
+        
+        s = s.lower()
+
+        for item in listOfPhrases:
+            if item.lower() in s:
+                result = True
+                break
+
+        return result
+
+    def matchesMustContain(self, searchItem, resultItem):
+        result = False
+
+        phrasesToFind = searchItem.get('craigslist ad must contain', '');
+
+        if not phrasesToFind:
+            return True
+
+        url = resultItem.get('url', '')
+        
+        logging.info(f'Seeing if {url} contains at least one of {phrasesToFind}')
+
+        phrasesToFind = phrasesToFind.split(';')
+
+        # check title first
+        if self.containsCaseInsensitive(phrasesToFind, resultItem.get('name', '')):
+            logging.info('Yes it does')
+            return True
+
+        page = self.downloader.get(url)
+
+        # check page content
+        if self.containsCaseInsensitive(phrasesToFind, page):
+            logging.info('Yes it does')
+            return True
+
+        self.waitBetween()
+
+        return result
+
     def waitBetween(self):
         secondsBetweenItems = self.options['secondsBetweenItems']
+
+        if '--debug' in sys.argv:
+            secondsBetweenItems = 3
 
         logging.info(f'Waiting {secondsBetweenItems} seconds')
 
@@ -420,6 +491,9 @@ class Marketplaces:
     def waitBetween(self):
         secondsBetweenItems = self.options['secondsBetweenItems']
 
+        if '--debug' in sys.argv:
+            secondsBetweenItems = 3
+    
         logging.info(f'Waiting {secondsBetweenItems} seconds')
 
         time.sleep(secondsBetweenItems)

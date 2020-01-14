@@ -1,3 +1,5 @@
-keyword,craigslist category,min price,max price,min percentage difference,hours between runs
-iphone x,moa,100,3000,10,24
-iphone 11,moa,100,3000,10,24
+keyword,craigslist category,min price,min percentage difference,hours between runs,craigslist ad must contain
+iphone x,moa,100,10,24,
+iphone x,ela,100,10,24,
+iphone 11,moa,100,10,24,cash only;local pickup only
+Google Pixel 3a,moa,100,10,24,cash only;local pickup only
