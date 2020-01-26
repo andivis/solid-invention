@@ -7,10 +7,15 @@ import urllib
 import datetime
 import os
 import random
-from collections import OrderedDict
 import requests
+import traceback
+
 import lxml.html as lh
+
+from collections import OrderedDict
+
 import helpers
+
 from database import Database
 from helpers import Api
 
@@ -75,7 +80,7 @@ class Checkaflip:
         response = self.api.post('/api', body)
 
         if not response:
-            logging.error('Stopping. Wrong or no response.')
+            logging.error('Stopping. Wrong or no response.')            
             return
 
         # to avoid items that are not what the user wants
@@ -148,7 +153,7 @@ class Checkaflip:
         self.options = options
 
 class Craigslist:
-    def getResults(self, site, item, page):
+    def getResults(self, site, item, page, database):
         results = []
 
         document = lh.fromstring(page)
@@ -182,6 +187,10 @@ class Craigslist:
 
             newItem['idInWebsite'] = self.getId(newItem['url'])
 
+            # avoid duplicates
+            if self.isInDatabase(site, newItem, database):
+                continue
+
             if newItem['price'] <= 0:
                 logging.info('Skipping price is less than or equal to zero')
                 continue
@@ -199,6 +208,8 @@ class Craigslist:
         if not averageSellingPrice:
             return
 
+        self.averageSellingPrice = averageSellingPrice
+        
         i = 0
 
         keyword = item.get('keyword', '')
@@ -233,60 +244,179 @@ class Craigslist:
             urlToGet += f'/search/{category}?query={keywords}&sort=rel&min_price={minimumPrice}&max_price={maximumPrice}'
 
             page = self.downloader.get(urlToGet)
-            items = self.getResults(site, item, page)
+            items = self.getResults(site, item, page, database)
 
             for newItem in items:
-                if not self.matchesMustContain(item, newItem):
-                    continue
+                if not self.passesFilters(item, newItem):
+                    pass #debug continue
 
-                database.insert('result', newItem)
+                #debug database.insert('result', newItem)
+                
+                self.outputResult(site, item, newItem, database)
+
+                siteName = helpers.getDomainName(site)
+                outputFile = os.path.join(os.getcwd(), self.options['outputFile'])
+                name = newItem.get('name', '')
+                price = newItem.get('price', '')
+
+                self.notify(f'One or more new results!\n\nCheck {outputFile} for details.\n\nSite: {siteName}\nKeyword: {keyword}\nTitle: {name}\nPrice: ${price}.')
 
             self.waitBetween()
 
-    def containsCaseInsensitive(self, listOfPhrases, s):
+    def isInDatabase(self, site, newItem, database):
         result = False
 
+        siteName = helpers.getDomainName(site)
+        idInWebsite = newItem.get('idInWebsite', '')
+        existingItem = database.getFirst('result', '*', f"siteName= '{siteName}' and idInWebsite = '{idInWebsite}'", '', '')
+
+        if existingItem:
+            logging.info(f'Skipping. {siteName} ID {idInWebsite} is already in the database.')
+            result = True
+
+        return result
+
+    def containsCaseInsensitive(self, listOfPhrases, s):
+        result = None
+
         if not listOfPhrases:
-            return True
+            return result
         
         s = s.lower()
 
         for item in listOfPhrases:
             if item.lower() in s:
-                result = True
+                result = item
                 break
 
         return result
 
-    def matchesMustContain(self, searchItem, resultItem):
+    def passesFilters(self, searchItem, resultItem):
         result = False
 
-        phrasesToFind = searchItem.get('craigslist ad must contain', '');
+        phrasesToFind = searchItem.get('craigslist ad must contain', '')
+        phrasesToAvoid = searchItem.get('craigslist ad must not contain', '')
 
-        if not phrasesToFind:
+        if not phrasesToFind and not phrasesToAvoid:
             return True
 
         url = resultItem.get('url', '')
         
-        logging.info(f'Seeing if {url} contains at least one of {phrasesToFind}')
+        logging.info(f'Seeing if {url} contains at least one of "{phrasesToFind}" and none of "{phrasesToAvoid}"')
 
-        phrasesToFind = phrasesToFind.split(';')
+        if phrasesToFind:
+            phrasesToFind = phrasesToFind.split(';')
+        else:
+            phrasesToFind = []
 
-        # check title first
-        if self.containsCaseInsensitive(phrasesToFind, resultItem.get('name', '')):
-            logging.info('Yes it does')
-            return True
+        if phrasesToAvoid:
+            phrasesToAvoid = phrasesToAvoid.split(';')
+        else:
+            phrasesToAvoid = []
 
-        page = self.downloader.get(url)
+        containsPhraseToFind = False
+        containsPhraseToAvoid = False
 
-        # check page content
-        if self.containsCaseInsensitive(phrasesToFind, page):
-            logging.info('Yes it does')
-            return True
+        if not phrasesToFind:
+            containsPhraseToFind = True
+
+        if not phrasesToAvoid:
+            phrasesToAvoid = False
+
+        page = self.downloader.get(url)        
+        document = lh.fromstring(page)
+
+        pictures = document.xpath("//a[@class = 'thumb']")
+
+        if searchItem.get('craigslist ad must contain a picture', '') == 'true' and len(pictures) == 0:
+            logging.info(f'Skipping. It doesn\'t have a picture.')
+            return False
+
+        elements = document.xpath("//body")
+
+        if elements:
+            # get plain text
+            for element in elements[0].findall(".//script"):
+                element.getparent().remove(element)
+            
+            page = elements[0].text_content()
+
+        phraseToFind = self.containsCaseInsensitive(phrasesToFind, page)
+        phraseToAvoid = self.containsCaseInsensitive(phrasesToAvoid, page)
+
+        if phraseToFind:
+            logging.info(f'It contains a specified phrase: {phraseToFind}')
+            containsPhraseToFind = True
+        elif phrasesToFind:
+            logging.info(f'Skipping. It does not contain at least one of: {phrasesToFind}.')
+
+        if phraseToAvoid:
+            logging.info(f'Skipping. It contains a phrase to avoid: {phraseToAvoid}')
+            containsPhraseToAvoid = True
+
+        if containsPhraseToFind and not containsPhraseToAvoid:
+            logging.info(f'Passed phrase and picture filters')
+            result = True
 
         self.waitBetween()
 
         return result
+
+    def outputResult(self, site, searchItem, newItem, database):
+        # write headers
+        if not os.path.exists(self.options['outputFile']):
+            headers = ['date', 'keyword']
+
+            for site in self.options['sites']:
+                siteName = helpers.getDomainName(site)
+
+                headers.append(siteName + ' price')
+
+            headers.append('difference')
+            headers.append('percentage')
+            headers.append('url')
+
+            line = ','.join(headers)
+
+            helpers.toFile(line, self.options['outputFile'])
+
+        keyword = searchItem.get('keyword', '')
+
+        now = datetime.datetime.utcnow()
+        today = now.strftime('%Y-%m-%d')
+
+        siteName = helpers.getDomainName(site)
+        fields = [today, keyword]
+
+        fields.append(str(self.averageSellingPrice))
+        fields.append(str(newItem.get('price', '')))
+
+        difference = self.averageSellingPrice - newItem.get('price', '')
+        fields.append(helpers.fixedDecimals(difference, 2))
+    
+        percentage = newItem.get('price', '') / self.averageSellingPrice
+        percentage = percentage * 100.0
+        fields.append(helpers.fixedDecimals(percentage, 0))
+        
+        fields.append(newItem.get('url', ''))
+
+        line = ','.join(fields)
+    
+        helpers.appendToFile(line, self.options['outputFile'])
+
+    def notify(self, message):
+        if self.hasNotified:
+            return
+
+        logging.info(message)
+
+        when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+
+        helpers.toFile(f'{when} marketplaces.exe: {message}', 'logs/event.txt')
+
+        helpers.run(['notepad', 'logs/event.txt'], False)
+
+        self.hasNotified = True
 
     def waitBetween(self):
         secondsBetweenItems = self.options['secondsBetweenItems']
@@ -310,6 +440,9 @@ class Craigslist:
         return helpers.findBetween(result, '', '.')
 
     def __init__(self, options):
+        self.averageSellingPrice = None
+        self.hasNotified = False
+
         self.siteInformation = json.loads(helpers.getFile('craigslist.json'))
 
         self.downloader = Downloader()
@@ -345,7 +478,6 @@ class Marketplaces:
                     logging.error(f'Skipping. Did not find average selling price.')
                     continue
 
-                self.addToReport(item)
                 self.markDone(site, item)
 
                 if site == 'craigslist':
@@ -353,6 +485,7 @@ class Marketplaces:
             except Exception as e:
                 logging.error(f'Skipping. Something went wrong.')
                 logging.error(e)
+                logging.debug(traceback.format_exc())
 
     def lookUpItem(self, site, item):
         if 'checkaflip' in site:
@@ -407,57 +540,6 @@ class Marketplaces:
 
         return result
 
-    def addToReport(self, item):
-        if not os.path.exists(self.options['outputFile']):
-            headers = ['keyword', 'date']
-
-            for site in self.options['sites']:
-                siteName = helpers.getDomainName(site)
-
-                headers.append(siteName + ' price')
-
-            headers.append('difference')
-            headers.append('percentage')
-            headers.append('url')
-
-            line = ','.join(headers)
-
-            helpers.toFile(line, self.options['outputFile'])
-
-        keyword = item.get('keyword', '')
-
-        now = datetime.datetime.utcnow()
-        today = now.strftime('%Y-%m-%d')
-
-        minimumDate = helpers.getDateStringSecondsAgo(24 * 60 * 60, True)
-               
-        for site in self.options['sites']:
-            siteName = helpers.getDomainName(site)
-
-            if siteName == 'checkaflip.com':
-                continue
-
-            rows = self.database.get('result', '*', f"keyword = '{keyword}' and gmDate >= '{minimumDate}' and siteName = '{siteName}'", 'price', 'asc')
-
-            for row in rows:
-                fields = [keyword, today]
-
-                fields.append(str(self.averageSellingPrice))
-                fields.append(str(row.get('price', '')))
-
-                difference = self.averageSellingPrice - row.get('price', '')
-                fields.append(helpers.fixedDecimals(difference, 2))
-            
-                percentage = row.get('price', '') / self.averageSellingPrice
-                percentage = percentage * 100.0
-                fields.append(helpers.fixedDecimals(percentage, 0))
-                
-                fields.append(row.get('url', ''))
-
-                line = ','.join(fields)
-            
-                helpers.appendToFile(line, self.options['outputFile'])
-
     def markDone(self, site, item):
         siteName = helpers.getDomainName(site)
 
@@ -497,6 +579,7 @@ class Marketplaces:
         except Exception as e:
             logging.error('Database error:')
             logging.error(e)
+            logging.debug(traceback.format_exc())
     
     def cleanUp(self):
         self.database.close()

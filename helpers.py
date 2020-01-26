@@ -54,18 +54,15 @@ def fixedDecimals(n, numberOfDecimalPlaces):
     return result
 
 def findBetween(s, first, last):
-    try:
-        start = s.index(first) + len(first)
-    except ValueError:
-        start = 0
+    start = 0
 
-    try:
-        if not last:
-            end = len(s)
-        else:
-            end = s.index(last, start)
-    except ValueError:
-        end = len(s)
+    if first and first in s:
+        start = s.index(first) + len(first)
+
+    end = len(s)
+
+    if last and last in s[start:]:
+        end = s.index(last, start)
 
     return s[start:end]
 
@@ -140,9 +137,16 @@ def makeDirectory(directoryName):
         os.mkdir(directoryName)
 
 
-def run(command):
+def run(command, wait=True):
     try:
-        subprocess.run(command)
+        line = ' '.join(command)
+        
+        logging.info(f'Running {line}')
+
+        if wait:
+            return subprocess.run(command)
+        else:
+            return subprocess.Popen(command, shell=True)
     except Exception as e:
         logging.error(e)
 
@@ -334,6 +338,7 @@ class Api:
             result = json.loads(response.text)
         except Exception as e:
             logging.error(e)
+            logging.debug(traceback.format_exc())
 
         return result
 
@@ -350,6 +355,7 @@ class Api:
             result = json.loads(response.text)
         except Exception as e:
             logging.error(e)
+            logging.debug(traceback.format_exc())
 
         return result
 
