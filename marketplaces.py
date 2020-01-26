@@ -259,7 +259,7 @@ class Craigslist:
                 name = newItem.get('name', '')
                 price = newItem.get('price', '')
 
-                self.notify(f'One or more new results!\n\nCheck {outputFile} for details.\n\nSite: {siteName}\nKeyword: {keyword}\nTitle: {name}\nPrice: ${price}.')
+                self.notify(f'One or more new results!\n\nCheck {outputFile} for details.\n\nSite: {siteName}\nKeyword: {keyword}\nTitle: {name}\nPrice: ${price}')
 
             self.waitBetween()
 
@@ -365,7 +365,7 @@ class Craigslist:
     def outputResult(self, site, searchItem, newItem, database):
         # write headers
         if not os.path.exists(self.options['outputFile']):
-            headers = ['date', 'keyword']
+            headers = ['date', 'keyword', 'craigslist category']
 
             for site in self.options['sites']:
                 siteName = helpers.getDomainName(site)
@@ -386,7 +386,7 @@ class Craigslist:
         today = now.strftime('%Y-%m-%d')
 
         siteName = helpers.getDomainName(site)
-        fields = [today, keyword]
+        fields = [today, keyword, searchItem.get('craigslist category', '')]
 
         fields.append(str(self.averageSellingPrice))
         fields.append(str(newItem.get('price', '')))
