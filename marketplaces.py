@@ -248,9 +248,9 @@ class Craigslist:
 
             for newItem in items:
                 if not self.passesFilters(item, newItem):
-                    pass #debug continue
+                    continue
 
-                #debug database.insert('result', newItem)
+                database.insert('result', newItem)
                 
                 self.outputResult(site, item, newItem, database)
 
