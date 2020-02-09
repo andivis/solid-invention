@@ -9,6 +9,7 @@ import time
 import configparser
 import datetime
 import json
+import traceback
 from logging.handlers import RotatingFileHandler
 from collections import OrderedDict
 
@@ -37,6 +38,34 @@ def appendToFile(s, fileName):
     with io.open(fileName, "a", encoding="utf-8") as text_file:
         print(s, file=text_file)
 
+def getJsonFile(fileName):
+    result = {}
+
+    try:
+        import json
+
+        file = getFile(fileName)
+
+        if not file:
+            return result
+
+        result = json.loads(file)
+    except Exception as e:
+        handleException(e)
+
+    return result
+
+def get(item, key):
+    if not item:
+        return ''
+
+    result = item.get(key, '')
+
+    # to avoid null values
+    if not result and result != 0:
+        result = ''
+
+    return result
 
 def numbersOnly(s):
     return ''.join(filter(lambda x: x.isdigit(), s))
@@ -53,13 +82,19 @@ def fixedDecimals(n, numberOfDecimalPlaces):
 
     return result
 
-def findBetween(s, first, last):
+def findBetween(s, first, last, strict=False):
     start = 0
+
+    if strict and first and not first in s:
+        return ''
 
     if first and first in s:
         start = s.index(first) + len(first)
 
     end = len(s)
+
+    if strict and last and not last in s[start:]:
+        return ''
 
     if last and last in s[start:]:
         end = s.index(last, start)
@@ -67,23 +102,38 @@ def findBetween(s, first, last):
     return s[start:end]
 
 def getNested(j, keys):
+    result = ''
+
     try:
         element = j
 
         i = 0
 
         for key in keys:
-            if not key in element:
-                break;
-            
+            if not element:
+                break
+
+            # might be an integer index
+            if isinstance(key, str) and not key in element:
+                break
+
+            if isinstance(key, int):
+                if not isinstance(element, list):
+                    break
+                
+                if key < 0 or key >= len(element):
+                    break
+
             element = element[key]
 
-            if i == len(keys - 1):
+            if i == len(keys) - 1:
                 return element
 
             i += 1
     except:
-        return ""
+        return ''
+
+    return result
 
 def stringToFloatingPoint(s):
     result = 0.0
@@ -121,7 +171,7 @@ def getCsvFile(fileName):
 def getCsvFileAsDictionary(fileName):
     result = []
 
-    with open('input.csv') as inputFile:
+    with open(fileName) as inputFile:
         csvReader = csv.DictReader(inputFile, delimiter=',')
             
         for row in csvReader:
@@ -359,6 +409,53 @@ class Api:
 
         return result
 
+    def setHeadersFromHarFile(self, fileName, urlMustContain):
+        try:
+            from pathlib import Path
+            
+            headersList = []
+            
+            if Path(fileName).suffix == '.har':
+                from haralyzer import HarParser
+            
+                file = getFile(fileName)
+
+                j = json.loads(file)
+
+                har_page = HarParser(har_data=j)
+
+                # find the right url
+                for page in har_page.pages:
+                    for entry in page.entries:
+                        if urlMustContain in entry['request']['url']:
+                            headersList = entry['request']['headers']
+                            break
+
+            else:
+                headersList = getJsonFile(fileName)
+                headersList = get(headersList, 'headers')
+
+            headers = []
+
+            for header in headersList:
+                name = header.get('name', '')
+
+                # ignore pseudo-headers
+                if name.startswith(':'):
+                    continue
+
+                if name.lower() == 'content-length' or name.lower() == 'host':
+                    continue
+
+                newHeader = (name, header.get('value', ''))
+
+                headers.append(newHeader)
+
+            self.headers = OrderedDict(headers)
+        
+        except Exception as e:
+            handleException(e)
+
     def __init__(self, urlPrefix):
         self.urlPrefix = urlPrefix
 
@@ -376,6 +473,8 @@ class Api:
             ('upgrade-insecure-requests', '1'),
             ('te', 'trailers')
         ])
+
+        self.setHeadersFromHarFile('program/resources/headers.txt', '')
 
         self.proxies = None
         

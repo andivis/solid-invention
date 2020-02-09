@@ -9,6 +9,7 @@ import os
 import random
 import requests
 import traceback
+import html
 
 import lxml.html as lh
 
@@ -189,7 +190,8 @@ class Craigslist:
 
             # avoid duplicates
             if self.isInDatabase(site, newItem, database):
-                continue
+                logging.info('Stopping. Already saw the subsequent results.')
+                break
 
             if newItem['price'] <= 0:
                 logging.info('Skipping price is less than or equal to zero')
@@ -235,6 +237,11 @@ class Craigslist:
             minimumPrice = 1
 
         for city in self.siteInformation['cities']:
+            if '--debug' in sys.argv:
+                if city.get('url', '') == 'https://albanyga.craigslist.org':
+                    logging.info('Stopping')
+                    break
+
             cityName = city.get('name', '');
 
             logging.info(f'Keyword {onItemIndex}: {keyword}. Site: craigslist. City {i + 1}: {cityName}. Price: {minimumPrice} to {maximumPrice}.')
@@ -250,9 +257,19 @@ class Craigslist:
                 if not self.passesFilters(item, newItem):
                     continue
 
-                database.insert('result', newItem)
-                
+                jsonColumn = {
+                    'email': self.email,
+                    'picture': self.pictureUrl,
+                    'picture similarity': ''
+                }
+
+                newItem['json'] = jsonColumn
+
                 self.outputResult(site, item, newItem, database)
+
+                newItem['json'] = json.dumps(newItem['json'])
+
+                database.insert('result', newItem)                
 
                 siteName = helpers.getDomainName(site)
                 outputFile = os.path.join(os.getcwd(), self.options['outputFile'])
@@ -294,6 +311,9 @@ class Craigslist:
     def passesFilters(self, searchItem, resultItem):
         result = False
 
+        self.pictureUrl = ''
+        self.email = ''
+
         phrasesToFind = searchItem.get('craigslist ad must contain', '')
         phrasesToAvoid = searchItem.get('craigslist ad must not contain', '')
 
@@ -327,8 +347,21 @@ class Craigslist:
         document = lh.fromstring(page)
 
         pictures = document.xpath("//a[@class = 'thumb']")
+        javascriptContainsPicture = '"thumb":"https://images.craigslist.org/' in page
 
-        if searchItem.get('craigslist ad must contain a picture', '') == 'true' and len(pictures) == 0:
+        if pictures:
+            self.pictureUrl = pictures[0].attrib['href']
+
+        if not self.pictureUrl:
+            imageList = helpers.findBetween(page, 'var imgList = ', ';\n', True)
+
+            if imageList:
+                imageList = json.loads(imageList)
+
+                if imageList:
+                    self.pictureUrl = imageList[0].get('url', '')
+
+        if searchItem.get('craigslist ad must contain a picture', '') == 'true' and len(pictures) == 0 and not javascriptContainsPicture:
             logging.info(f'Skipping. It doesn\'t have a picture.')
             return False
 
@@ -358,9 +391,32 @@ class Craigslist:
             logging.info(f'Passed phrase and picture filters')
             result = True
 
+        if result:
+            self.email = self.getEmail(url, document)
+
         self.waitBetween()
 
         return result
+
+    def getEmail(self, url, document):
+        urlToGet = getFirst(document, "//button[contains(@data-href, '/__SERVICE_ID__/')]", 'data-href')
+
+        if not urlToGet:
+            return ''
+        
+        baseOfUrl = helpers.findBetween(url, '', '.org/') + '.org/contactinfo/'
+
+        urlToGet = urlToGet.replace('/__SERVICE_ID__/', baseOfUrl)
+        
+        response = self.api.post(urlToGet, '')
+
+        string = response.get('replyContent', '')
+        string = helpers.findBetween(string, '<a href="', '"')
+
+        if not string:
+            return ''
+
+        return string
 
     def outputResult(self, site, searchItem, newItem, database):
         # write headers
@@ -374,7 +430,10 @@ class Craigslist:
 
             headers.append('difference')
             headers.append('percentage')
+            headers.append('picture similarity')
             headers.append('url')
+            headers.append('email')
+            headers.append('picture')
 
             line = ','.join(headers)
 
@@ -398,11 +457,52 @@ class Craigslist:
         percentage = percentage * 100.0
         fields.append(helpers.fixedDecimals(percentage, 0))
         
+        fields.append(helpers.getNested(newItem, ['json', 'picture similarity']))
+        
         fields.append(newItem.get('url', ''))
+        
+        fields.append(helpers.getNested(newItem, ['json', 'email']))
+        fields.append(helpers.getNested(newItem, ['json', 'picture']))
 
         line = ','.join(fields)
     
         helpers.appendToFile(line, self.options['outputFile'])
+
+        self.csvToHtml(self.options['outputFile'])
+
+    def csvToHtml(self, fileName):
+        import pandas as pd
+
+        csv = helpers.getCsvFileAsDictionary(fileName)
+
+        for row in csv:
+            if not row.get('picture', ''):
+                continue
+
+            for column in row:
+                if column == 'url':
+                    row[column] = f'<a href="{row[column]}">{row[column]}</a>'
+                elif column == 'email':
+                    shortUrl = helpers.findBetween(row[column], 'mailto:', '?')
+                    
+                    row[column] = f'<a href="{row[column]}">{shortUrl}</a>'
+                elif column == 'picture':
+                    row[column] = f'<a href="{row[column]}"><img src="{row[column]}"/></a>'
+                else:
+                    row[column] = html.escape(row[column], quote=False)
+
+        df = pd.DataFrame(csv)
+
+        # Save to file
+        htmlFileName = helpers.fileNameOnly(fileName, False) + '.html'
+
+        df.to_html(htmlFileName, escape=False)
+
+        file = helpers.getFile(htmlFileName)
+
+        file = helpers.getFile('program/resources/style.html') + file
+
+        helpers.toFile(file, htmlFileName)
 
     def notify(self, message):
         if self.hasNotified:
@@ -442,11 +542,14 @@ class Craigslist:
     def __init__(self, options):
         self.averageSellingPrice = None
         self.hasNotified = False
+        self.pictureUrl = ''
+        self.email = ''
 
         self.siteInformation = json.loads(helpers.getFile('craigslist.json'))
 
         self.downloader = Downloader()
-
+        self.api = Api('')
+        
         self.options = options
 
 class Marketplaces:
