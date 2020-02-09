@@ -225,10 +225,10 @@ class Craigslist:
         # sss means all for sale
         category = item.get('craigslist category', 'sss')
 
-        minimumPercentageDifference = item.get('min percentage difference', 10)
-        minimumPercentageDifference = float(minimumPercentageDifference) / 100
+        minimumProfitMargin = item.get('min profit margin', 10)
+        minimumProfitMargin = float(minimumProfitMargin) / 100
 
-        priceWant = averageSellingPrice * (1 - minimumPercentageDifference)
+        priceWant = averageSellingPrice * (1 - minimumProfitMargin)
         priceWant = int(round(priceWant))
 
         maximumPrice = priceWant
@@ -428,8 +428,7 @@ class Craigslist:
 
                 headers.append(siteName + ' price')
 
-            headers.append('difference')
-            headers.append('percentage')
+            headers.append('profit margin')
             headers.append('picture similarity')
             headers.append('url')
             headers.append('email')
@@ -451,11 +450,9 @@ class Craigslist:
         fields.append(str(newItem.get('price', '')))
 
         difference = self.averageSellingPrice - newItem.get('price', '')
-        fields.append(helpers.fixedDecimals(difference, 2))
-    
-        percentage = newItem.get('price', '') / self.averageSellingPrice
-        percentage = percentage * 100.0
-        fields.append(helpers.fixedDecimals(percentage, 0))
+        profitMargin = difference / self.averageSellingPrice
+        profitMargin = profitMargin * 100.0
+        fields.append(helpers.fixedDecimals(profitMargin, 0))
         
         fields.append(helpers.getNested(newItem, ['json', 'picture similarity']))
         
