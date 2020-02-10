@@ -158,8 +158,6 @@ class Checkaflip:
 
 class Craigslist:
     def getResults(self, site, item, page, database):
-        self.aws = Aws()
-
         results = []
 
         document = lh.fromstring(page)
@@ -476,7 +474,7 @@ class Craigslist:
             containsPhraseToAvoid = True
 
         if containsPhraseToFind and not containsPhraseToAvoid:
-            logging.info(f'Passed phrase and picture filters')
+            logging.info(f'Passed phrase filters')
             result = True
 
         if result:
@@ -526,6 +524,7 @@ class Craigslist:
             line = ','.join(headers)
 
             helpers.toFile(line, self.options['outputFile'])
+            helpers.toFile(line, 'output-backup.csv')
 
         keyword = searchItem.get('keyword', '')
 
@@ -559,19 +558,41 @@ class Craigslist:
         line = ','.join(fields)
     
         helpers.appendToFile(line, self.options['outputFile'])
+        helpers.appendToFile(line, 'output-backup.csv')
 
         self.csvToHtml(self.options['outputFile'])
 
     def csvToHtml(self, fileName):
-        import pandas as pd
-
         csv = helpers.getCsvFileAsDictionary(fileName)
+
+        file = helpers.getFile('program/resources/style.html')
+
+        file += '<table>\n'
+        file += '    <thead>\n'
+
+        isFirstRow = True
 
         for row in csv:
             if not row.get('picture', ''):
                 continue
 
+            file += f'        <tr>\n'
+
+            if isFirstRow:
+                tag = 'th'
+
+                for column in row:
+                    file += f'            <{tag}>{column}</{tag}>\n'
+
+                isFirstRow = False
+                
+                file += '        </tr>\n'
+                file += '    </thead>\n'
+                file += '    <tbody>\n'
+                file += '        <tr>\n'
+            
             for column in row:
+
                 if column == 'url':
                     row[column] = f'<a href="{row[column]}">{row[column]}</a>'
                 elif column == 'email':
@@ -583,16 +604,17 @@ class Craigslist:
                 else:
                     row[column] = html.escape(row[column], quote=False)
 
-        df = pd.DataFrame(csv)
+                tag = 'td'
+                
+                file += f'            <{tag}>{row[column]}</{tag}>\n'
+
+            file += '        </tr>\n'
+
+        file += '    </tbody>\n'
+        file += '</table>'
 
         # Save to file
         htmlFileName = helpers.fileNameOnly(fileName, False) + '.html'
-
-        df.to_html(htmlFileName, escape=False)
-
-        file = helpers.getFile(htmlFileName)
-
-        file = helpers.getFile('program/resources/style.html') + file
 
         helpers.toFile(file, htmlFileName)
 
@@ -643,6 +665,8 @@ class Craigslist:
         self.api = Api('')
         
         self.options = options
+
+        self.aws = Aws(self.options)
 
 class Marketplaces:
     def run(self):
@@ -799,7 +823,8 @@ class Marketplaces:
             'secondsBetweenItems': 30,
             'sites': '',
             'maximumDaysToKeepItems': 60,
-            'onlyOutputMatches': 0
+            'onlyOutputMatches': 0,
+            'resourceUrl': 'http://temporary.info.tm/Pa6Xxwkua9AjYymMOiB6'
         }
 
         helpers.setOptions('options.ini', self.options)
