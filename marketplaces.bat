@@ -1,7 +1,18 @@
-del database.sqlite
-del output.csv
-del output-backup.csv
+:start
 
-git reset --hard
-git pull
-pause
+dist\marketplaces\marketplaces.exe
+
+choice /t 7200 /d y
+choice /t 7200 /d y
+choice /t 7200 /d y
+choice /t 7200 /d y
+choice /t 7200 /d y
+choice /t 7200 /d y
+choice /t 7200 /d y
+choice /t 7200 /d y
+choice /t 7200 /d y
+choice /t 7200 /d y
+choice /t 7200 /d y
+choice /t 7200 /d y
+
+goto start

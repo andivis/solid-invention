@@ -274,14 +274,14 @@ class Craigslist:
                 newItem['matches'] = int(matches)
                 newItem['json'] = jsonColumn
 
-                if matches or self.options['onlyOutputMatches'] == '0':
+                if matches or self.options['onlyOutputMatches'] == 0:
                     self.outputResult(site, item, newItem, database)
 
                 newItem['json'] = json.dumps(newItem['json'])
 
                 database.insert('result', newItem)                
 
-                if matches or self.options['onlyOutputMatches'] == '0':
+                if matches or self.options['onlyOutputMatches'] == 0:
                     siteName = helpers.getDomainName(site)
                     outputFile = os.path.join(os.getcwd(), self.options['outputFile'])
                     name = newItem.get('name', '')

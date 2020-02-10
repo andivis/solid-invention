@@ -35,7 +35,8 @@ class Aws:
         self.client = boto3.client(
             'rekognition',
             aws_access_key_id=accessKey,
-            aws_secret_access_key=secretKey
+            aws_secret_access_key=secretKey,
+            region_name='us-east-2'
         )
 
     def __init__(self, options):
