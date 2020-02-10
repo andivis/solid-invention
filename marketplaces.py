@@ -11,6 +11,7 @@ import requests
 import traceback
 import html
 
+# pip packages
 import lxml.html as lh
 
 from collections import OrderedDict
@@ -19,6 +20,8 @@ import helpers
 
 from database import Database
 from helpers import Api
+
+from program.library.aws import Aws
 
 def getFirst(element, xpath, attribute=None):
     result = ''
@@ -155,6 +158,8 @@ class Checkaflip:
 
 class Craigslist:
     def getResults(self, site, item, page, database):
+        self.aws = Aws()
+
         results = []
 
         document = lh.fromstring(page)
@@ -225,7 +230,7 @@ class Craigslist:
         # sss means all for sale
         category = item.get('craigslist category', 'sss')
 
-        minimumProfitMargin = item.get('min profit margin', 10)
+        minimumProfitMargin = item.get('min profit %', 10)
         minimumProfitMargin = float(minimumProfitMargin) / 100
 
         priceWant = averageSellingPrice * (1 - minimumProfitMargin)
@@ -280,6 +285,77 @@ class Craigslist:
 
             self.waitBetween()
 
+    def picturePassesFilters(self, item, url):
+        result = False
+
+        thingsToFind = item.get('picture must contain one of', '')
+
+        if not thingsToFind:
+            return True
+
+        if not url:
+            return result
+
+        imageFileName = 'logs/cache/image'
+
+        if os.path.exists(imageFileName):
+            os.remove(imageFileName)
+        
+        helpers.makeDirectory(os.path.dirname(imageFileName))
+
+        self.api.getBinaryFile(url, imageFileName)
+
+        if os.stat(imageFileName).st_size == 0:
+            logging.error(f'Failed to download {url}')
+            return False
+        
+        thingsInImage = self.aws.detect_labels_local_file(imageFileName)
+
+        minimumConfidence = item.get('picture confidence %', '')
+
+        if minimumConfidence != '':
+            minimumConfidence = float(minimumConfidence)
+
+        # show labels
+        toLog = []
+        
+        for thing in thingsInImage:
+            name = thing.get('Name', '').lower()
+            confidence = thing.get('Confidence', 0)
+            confidence = helpers.fixedDecimals(confidence, 0)
+
+            toLog.append(f'{name}: {confidence}')
+
+        toLog = ', '.join(toLog)
+        logging.info('In picture: ' + toLog)
+
+        for thing in thingsInImage:
+            name = thing.get('Name', '').lower()
+            confidence = thing.get('Confidence', 0)
+
+            nameMatches = False
+            
+            for toFind in thingsToFind.split(';'):
+                if toFind.lower().strip() == name:
+                    nameMatches = True
+                    break
+
+            if not nameMatches:
+                continue
+
+            if confidence < minimumConfidence:
+                continue
+
+            result = True
+
+            logging.info(f'The picture contains {name}. Considering it a match.')
+            break
+
+        if not result:
+            logging.info(f'Skipping. The picture doesn\'t contain any the specified things.')
+
+        return result
+    
     def isInDatabase(self, site, newItem, database):
         result = False
 
@@ -393,6 +469,7 @@ class Craigslist:
 
         if result:
             self.email = self.getEmail(url, document)
+            result = self.picturePassesFilters(searchItem, self.pictureUrl)
 
         self.waitBetween()
 
@@ -428,7 +505,7 @@ class Craigslist:
 
                 headers.append(siteName + ' price')
 
-            headers.append('profit margin')
+            headers.append('min profit %')
             headers.append('picture similarity')
             headers.append('url')
             headers.append('email')

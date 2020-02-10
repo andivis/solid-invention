@@ -38,6 +38,10 @@ def appendToFile(s, fileName):
     with io.open(fileName, "a", encoding="utf-8") as text_file:
         print(s, file=text_file)
 
+def toBinaryFile(s, fileName):
+    with io.open(fileName, "wb") as file:
+        file.write(s)
+
 def getJsonFile(fileName):
     result = {}
 
@@ -409,6 +413,14 @@ class Api:
 
         return result
 
+    def getBinaryFile(self, url, outputFileName):
+        import requests
+        
+        response = requests.get(url, headers=self.headers, proxies=self.proxies, timeout=30)
+
+        if response and response.content:
+            toBinaryFile(response.content, outputFileName)
+    
     def setHeadersFromHarFile(self, fileName, urlMustContain):
         try:
             from pathlib import Path
