@@ -230,10 +230,15 @@ class Craigslist:
         # sss means all for sale
         category = item.get('craigslist category', 'sss')
 
-        minimumProfitMargin = item.get('min profit %', 10)
-        minimumProfitMargin = float(minimumProfitMargin) / 100
+        minimumProfitPercentage = item.get('min profit %', 10)
+        minimumProfitPercentage = float(minimumProfitPercentage) / 100
 
-        priceWant = averageSellingPrice * (1 - minimumProfitMargin)
+        shipping = item.get('shipping cost', 0)
+        shipping = float(shipping)
+
+        priceWant = self.averageSellingPrice / minimumProfitPercentage
+        priceWant = priceWant - shipping
+
         priceWant = int(round(priceWant))
 
         maximumPrice = priceWant
@@ -259,29 +264,32 @@ class Craigslist:
             items = self.getResults(site, item, page, database)
 
             for newItem in items:
-                if not self.passesFilters(item, newItem):
-                    continue
+                matches = self.passesFilters(item, newItem)
 
                 jsonColumn = {
                     'email': self.email,
                     'picture': self.pictureUrl,
-                    'picture similarity': ''
+                    'picture similarity': '',
+                    'things in image': self.thingsInImage
                 }
 
+                newItem['matches'] = int(matches)
                 newItem['json'] = jsonColumn
 
-                self.outputResult(site, item, newItem, database)
+                if matches or self.options['onlyOutputMatches'] == '0':
+                    self.outputResult(site, item, newItem, database)
 
                 newItem['json'] = json.dumps(newItem['json'])
 
                 database.insert('result', newItem)                
 
-                siteName = helpers.getDomainName(site)
-                outputFile = os.path.join(os.getcwd(), self.options['outputFile'])
-                name = newItem.get('name', '')
-                price = newItem.get('price', '')
+                if matches or self.options['onlyOutputMatches'] == '0':
+                    siteName = helpers.getDomainName(site)
+                    outputFile = os.path.join(os.getcwd(), self.options['outputFile'])
+                    name = newItem.get('name', '')
+                    price = newItem.get('price', '')
 
-                self.notify(f'One or more new results!\n\nCheck {outputFile} for details.\n\nSite: {siteName}\nKeyword: {keyword}\nTitle: {name}\nPrice: ${price}')
+                    self.notify(f'One or more new results!\n\nCheck {outputFile} for details.\n\nSite: {siteName}\nKeyword: {keyword}\nTitle: {name}\nPrice: ${price}')
 
             self.waitBetween()
 
@@ -296,20 +304,20 @@ class Craigslist:
         if not url:
             return result
 
-        imageFileName = 'logs/cache/image'
+        pictureFileName = 'logs/cache/picture'
 
-        if os.path.exists(imageFileName):
-            os.remove(imageFileName)
+        if os.path.exists(pictureFileName):
+            os.remove(pictureFileName)
         
-        helpers.makeDirectory(os.path.dirname(imageFileName))
+        helpers.makeDirectory(os.path.dirname(pictureFileName))
 
-        self.api.getBinaryFile(url, imageFileName)
+        self.api.getBinaryFile(url, pictureFileName)
 
-        if os.stat(imageFileName).st_size == 0:
+        if os.stat(pictureFileName).st_size == 0:
             logging.error(f'Failed to download {url}')
             return False
         
-        thingsInImage = self.aws.detect_labels_local_file(imageFileName)
+        self.thingsInImage = self.aws.detect_labels_local_file(pictureFileName)
 
         minimumConfidence = item.get('picture confidence %', '')
 
@@ -319,7 +327,7 @@ class Craigslist:
         # show labels
         toLog = []
         
-        for thing in thingsInImage:
+        for thing in self.thingsInImage:
             name = thing.get('Name', '').lower()
             confidence = thing.get('Confidence', 0)
             confidence = helpers.fixedDecimals(confidence, 0)
@@ -329,7 +337,7 @@ class Craigslist:
         toLog = ', '.join(toLog)
         logging.info('In picture: ' + toLog)
 
-        for thing in thingsInImage:
+        for thing in self.thingsInImage:
             name = thing.get('Name', '').lower()
             confidence = thing.get('Confidence', 0)
 
@@ -346,9 +354,11 @@ class Craigslist:
             if confidence < minimumConfidence:
                 continue
 
+            self.pictureConfidence = helpers.fixedDecimals(confidence, 0)
+            
             result = True
 
-            logging.info(f'The picture contains {name}. Considering it a match.')
+            logging.info(f'The picture contains {name}. Confidence: {self.pictureConfidence}%. Considering it a match.')
             break
 
         if not result:
@@ -389,6 +399,8 @@ class Craigslist:
 
         self.pictureUrl = ''
         self.email = ''
+        self.thingsInImage = []
+        self.pictureConfidence = ''
 
         phrasesToFind = searchItem.get('craigslist ad must contain', '')
         phrasesToAvoid = searchItem.get('craigslist ad must not contain', '')
@@ -498,15 +510,15 @@ class Craigslist:
     def outputResult(self, site, searchItem, newItem, database):
         # write headers
         if not os.path.exists(self.options['outputFile']):
-            headers = ['date', 'keyword', 'craigslist category']
+            headers = ['date', 'keyword', 'craigslist category', 'matches']
 
             for site in self.options['sites']:
                 siteName = helpers.getDomainName(site)
 
                 headers.append(siteName + ' price')
 
-            headers.append('min profit %')
-            headers.append('picture similarity')
+            headers.append('profit %')
+            headers.append('picture confidence %')
             headers.append('url')
             headers.append('email')
             headers.append('picture')
@@ -523,15 +535,21 @@ class Craigslist:
         siteName = helpers.getDomainName(site)
         fields = [today, keyword, searchItem.get('craigslist category', '')]
 
+        fields.append(str(newItem.get('matches', '')))
+
         fields.append(str(self.averageSellingPrice))
         fields.append(str(newItem.get('price', '')))
 
-        difference = self.averageSellingPrice - newItem.get('price', '')
-        profitMargin = difference / self.averageSellingPrice
-        profitMargin = profitMargin * 100.0
-        fields.append(helpers.fixedDecimals(profitMargin, 0))
+        revenue = self.averageSellingPrice 
+        costs = newItem.get('price', '') + float(searchItem.get('shipping cost', 0))
         
-        fields.append(helpers.getNested(newItem, ['json', 'picture similarity']))
+        profit = revenue / costs
+        # as a percentage
+        profit = profit * 100
+        
+        fields.append(helpers.fixedDecimals(profit, 0))
+        
+        fields.append(self.pictureConfidence)
         
         fields.append(newItem.get('url', ''))
         
@@ -772,7 +790,7 @@ class Marketplaces:
 
         self.database = Database('database.sqlite')
 
-        self.executeDatabaseStatement('create table if not exists result ( siteName text, idInWebsite text, keyword text, gmDate text, url text, name text, price integer, country text, state text, city text, json text, primary key(siteName, idInWebsite) )')
+        self.executeDatabaseStatement('create table if not exists result ( siteName text, idInWebsite text, keyword text, gmDate text, url text, name text, price integer, matches integer, json text, primary key(siteName, idInWebsite) )')
         self.executeDatabaseStatement('create table if not exists jobHistory ( siteName text, keyword text, gmDateLastCompleted text, primary key(siteName, keyword) )')
 
         self.options = {
@@ -780,7 +798,8 @@ class Marketplaces:
             'outputFile': 'output.csv',
             'secondsBetweenItems': 30,
             'sites': '',
-            'maximumDaysToKeepItems': 60
+            'maximumDaysToKeepItems': 60,
+            'onlyOutputMatches': 0
         }
 
         helpers.setOptions('options.ini', self.options)
