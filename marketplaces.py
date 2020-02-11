@@ -294,13 +294,13 @@ class Craigslist:
     def picturePassesFilters(self, item, url):
         result = False
 
+        if not url:
+            return True
+
         thingsToFind = item.get('picture must contain one of', '')
 
         if not thingsToFind:
             return True
-
-        if not url:
-            return result
 
         pictureFileName = 'logs/cache/picture'
 

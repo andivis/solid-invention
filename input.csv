@@ -1,5 +1,5 @@
-keyword,craigslist category,min price,min profit %,shipping cost,hours between runs,craigslist ad must contain a picture,picture must contain one of,picture confidence %,craigslist ad must contain,craigslist ad must not contain
-iphone x,moa,100,120,20,24,true,phone;iphone,90,,cash only;local pickup only
-iphone x,ela,100,120,20,24,true,phone;iphone,90,,cash only;local pickup only
-iphone 11,moa,100,120,20,24,true,phone;iphone,90,,cash only;local pickup only
-Google Pixel 3a,moa,100,120,20,24,,phone,90,,cash only;local pickup only
+keyword,craigslist category,min price,min profit %,shipping cost,hours between runs,picture must contain one of,picture confidence %,craigslist ad must contain,craigslist ad must not contain
+iphone x,moa,100,120,20,24,phone;iphone,90,,cash only;local pickup only
+iphone x,ela,100,120,20,24,phone;iphone,90,,cash only;local pickup only
+iphone 11,moa,100,120,20,24,phone;iphone,90,,cash only;local pickup only
+Google Pixel 3a,moa,100,120,20,24,phone,90,,cash only;local pickup only
