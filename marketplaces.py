@@ -224,19 +224,17 @@ class Craigslist:
         minimumPrice = item.get('min price', '')
         minimumPrice = int(minimumPrice)
 
-        # don't want to items that cost more than the selling price
+        # don't want items that cost more than the selling price
         # sss means all for sale
         category = item.get('craigslist category', 'sss')
 
-        minimumProfitPercentage = item.get('min profit %', 10)
-        minimumProfitPercentage = float(minimumProfitPercentage) / 100
+        minimumProfit = item.get('min profit', 10)
+        minimumProfit = int(minimumProfit)
 
         shipping = item.get('shipping cost', 0)
         shipping = float(shipping)
 
-        priceWant = self.averageSellingPrice / minimumProfitPercentage
-        priceWant = priceWant - shipping
-
+        priceWant = self.averageSellingPrice - minimumProfit - shipping
         priceWant = int(round(priceWant))
 
         maximumPrice = priceWant
@@ -515,7 +513,7 @@ class Craigslist:
 
                 headers.append(siteName + ' price')
 
-            headers.append('profit %')
+            headers.append('profit')
             headers.append('picture confidence %')
             headers.append('url')
             headers.append('email')
@@ -542,11 +540,10 @@ class Craigslist:
         revenue = self.averageSellingPrice 
         costs = newItem.get('price', '') + float(searchItem.get('shipping cost', 0))
         
-        profit = revenue / costs
-        # as a percentage
-        profit = profit * 100
+        profit = revenue - costs
+        profit = int(round(profit))
         
-        fields.append(helpers.fixedDecimals(profit, 0))
+        fields.append(str(profit))
         
         fields.append(self.pictureConfidence)
         
