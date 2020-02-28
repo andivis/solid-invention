@@ -74,6 +74,9 @@ def get(item, key):
 def numbersOnly(s):
     return ''.join(filter(lambda x: x.isdigit(), s))
 
+def lettersNumbersAndSpacesOnly(s):
+    return ''.join(filter(lambda x: x.isdigit() or x.isalpha() or x == ' ', s))
+
 def fixedDecimals(n, numberOfDecimalPlaces):
     result = ''
 

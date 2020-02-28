@@ -260,7 +260,13 @@ class Craigslist:
             items = self.getResults(site, item, page, database)
 
             for newItem in items:
-                matches = self.passesFilters(item, newItem)
+                wordMatches = self.passesWordFilters(item, newItem)
+                pictureMatches = False
+                
+                # no point looking these up if words don't match
+                if wordMatches:
+                    self.email = self.getEmail(newItem, self.document)
+                    pictureMatches = self.picturePassesFilters(item, self.document)
 
                 jsonColumn = {
                     'email': self.email,
@@ -269,30 +275,46 @@ class Craigslist:
                     'things in image': self.thingsInImage
                 }
 
+                matches = wordMatches and pictureMatches
+
                 newItem['matches'] = int(matches)
                 newItem['json'] = jsonColumn
 
-                if matches or self.options['onlyOutputMatches'] == 0:
-                    self.outputResult(site, item, newItem, database)
+                # only output to csv/html files if words match
+                if wordMatches and (pictureMatches or self.options['onlyOutputPictureMatches'] == 0):
+                    self.outputResult(site, item, newItem)
 
-                newItem['json'] = json.dumps(newItem['json'])
-
-                database.insert('result', newItem)                
-
-                if matches or self.options['onlyOutputMatches'] == 0:
                     siteName = helpers.getDomainName(site)
-                    outputFile = os.path.join(os.getcwd(), self.options['outputFile'])
                     name = newItem.get('name', '')
                     price = newItem.get('price', '')
 
-                    self.notify(f'One or more new results!\n\nCheck {outputFile} for details.\n\nSite: {siteName}\nKeyword: {keyword}\nTitle: {name}\nPrice: ${price}')
+                    self.notify(f'One or more new results!\n\nCheck the output directory for details.\n\nSite: {siteName}\nKeyword: {keyword}\nTitle: {name}\nPrice: ${price}')
+
+                newItem['json'] = json.dumps(newItem['json'])
+
+                # store to database so can skip it next time
+                database.insert('result', newItem)     
 
             self.waitBetween()
 
-    def picturePassesFilters(self, item, url):
+    def picturePassesFilters(self, item, document):
         result = False
 
-        if not url:
+        pictures = document.xpath("//a[@class = 'thumb']")
+
+        if pictures:
+            self.pictureUrl = pictures[0].attrib['href']
+
+        if not self.pictureUrl:
+            imageList = helpers.findBetween(self.page, 'var imgList = ', ';\n', True)
+
+            if imageList:
+                imageList = json.loads(imageList)
+
+                if imageList:
+                    self.pictureUrl = imageList[0].get('url', '')
+
+        if not self.pictureUrl:
             return True
 
         thingsToFind = item.get('picture must contain one of', '')
@@ -307,10 +329,10 @@ class Craigslist:
         
         helpers.makeDirectory(os.path.dirname(pictureFileName))
 
-        self.api.getBinaryFile(url, pictureFileName)
+        self.api.getBinaryFile(self.pictureUrl, pictureFileName)
 
         if os.stat(pictureFileName).st_size == 0:
-            logging.error(f'Failed to download {url}')
+            logging.error(f'Failed to download {self.pictureUrl}')
             return False
         
         self.thingsInImage = self.aws.detect_labels_local_file(pictureFileName)
@@ -390,11 +412,13 @@ class Craigslist:
 
         return result
 
-    def passesFilters(self, searchItem, resultItem):
+    def passesWordFilters(self, searchItem, resultItem):
         result = False
 
         self.pictureUrl = ''
         self.email = ''
+        self.page = None
+        self.document = None
         self.thingsInImage = []
         self.pictureConfidence = ''
 
@@ -425,29 +449,12 @@ class Craigslist:
             containsPhraseToFind = True
 
         if not phrasesToAvoid:
-            phrasesToAvoid = False
+            containsPhraseToAvoid = False
 
-        page = self.downloader.get(url)        
+        page = self.downloader.get(url)
+        self.page = page
         document = lh.fromstring(page)
-
-        pictures = document.xpath("//a[@class = 'thumb']")
-        javascriptContainsPicture = '"thumb":"https://images.craigslist.org/' in page
-
-        if pictures:
-            self.pictureUrl = pictures[0].attrib['href']
-
-        if not self.pictureUrl:
-            imageList = helpers.findBetween(page, 'var imgList = ', ';\n', True)
-
-            if imageList:
-                imageList = json.loads(imageList)
-
-                if imageList:
-                    self.pictureUrl = imageList[0].get('url', '')
-
-        if searchItem.get('craigslist ad must contain a picture', '') == 'true' and len(pictures) == 0 and not javascriptContainsPicture:
-            logging.info(f'Skipping. It doesn\'t have a picture.')
-            return False
+        self.document = document
 
         elements = document.xpath("//body")
 
@@ -474,16 +481,12 @@ class Craigslist:
         if containsPhraseToFind and not containsPhraseToAvoid:
             logging.info(f'Passed phrase filters')
             result = True
-
-        if result:
-            self.email = self.getEmail(url, document)
-            result = self.picturePassesFilters(searchItem, self.pictureUrl)
-
-        self.waitBetween()
-
+        
         return result
 
-    def getEmail(self, url, document):
+    def getEmail(self, newItem, document):
+        url = newItem.get('url', '')
+        
         urlToGet = getFirst(document, "//button[contains(@data-href, '/__SERVICE_ID__/')]", 'data-href')
 
         if not urlToGet:
@@ -503,9 +506,14 @@ class Craigslist:
 
         return string
 
-    def outputResult(self, site, searchItem, newItem, database):
+    def outputResult(self, site, searchItem, newItem):
+        helpers.makeDirectory(self.options['outputDirectory'])
+
+        fileName = datetime.datetime.now().strftime('%Y.%m.%d') + ' ' + helpers.lettersNumbersAndSpacesOnly(searchItem.get('keyword', '')) + '.csv'
+        fileName = os.path.join(self.options['outputDirectory'], fileName)
+
         # write headers
-        if not os.path.exists(self.options['outputFile']):
+        if not os.path.exists(fileName):
             headers = ['date', 'keyword', 'craigslist category', 'matches']
 
             for site in self.options['sites']:
@@ -521,8 +529,8 @@ class Craigslist:
 
             line = ','.join(headers)
 
-            helpers.toFile(line, self.options['outputFile'])
-            helpers.toFile(line, 'output-backup.csv')
+            helpers.toFile(line, fileName)
+            helpers.toFile(line, fileName + '-backup.csv')
 
         keyword = searchItem.get('keyword', '')
 
@@ -554,10 +562,10 @@ class Craigslist:
 
         line = ','.join(fields)
     
-        helpers.appendToFile(line, self.options['outputFile'])
-        helpers.appendToFile(line, 'output-backup.csv')
+        helpers.appendToFile(line, fileName)
+        helpers.appendToFile(line, fileName + '-backup.csv')
 
-        self.csvToHtml(self.options['outputFile'])
+        self.csvToHtml(fileName)
 
     def csvToHtml(self, fileName):
         csv = helpers.getCsvFileAsDictionary(fileName)
@@ -612,7 +620,7 @@ class Craigslist:
 
         # Save to file
         htmlFileName = helpers.fileNameOnly(fileName, False) + '.html'
-
+        htmlFileName = self.options['outputDirectory'] + '/' + htmlFileName
         helpers.toFile(file, htmlFileName)
 
     def notify(self, message):
@@ -655,6 +663,8 @@ class Craigslist:
         self.hasNotified = False
         self.pictureUrl = ''
         self.email = ''
+        self.page = None
+        self.document = None
 
         self.siteInformation = json.loads(helpers.getFile('craigslist.json'))
 
@@ -816,11 +826,11 @@ class Marketplaces:
 
         self.options = {
             'inputFile': 'input.csv',
-            'outputFile': 'output.csv',
+            'outputDirectory': 'output',
             'secondsBetweenItems': 30,
             'sites': '',
             'maximumDaysToKeepItems': 60,
-            'onlyOutputMatches': 0,
+            'onlyOutputPictureMatches': 0,
             'resourceUrl': 'http://temporary.info.tm/Pa6Xxwkua9AjYymMOiB6'
         }
 
