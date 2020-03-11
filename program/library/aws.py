@@ -5,12 +5,17 @@ import requests
 # pip packages
 import boto3
 
+from ..library import helpers
+
+from ..library.helpers import get
+
 class Aws:
     def detect_labels_local_file(self, fileName):
         self.initialize()
 
         with open(fileName, 'rb') as image:
             response = self.client.detect_labels(Image={'Bytes': image.read()})
+
 
         logging.debug('Response: ' + json.dumps(response))
 
@@ -22,7 +27,9 @@ class Aws:
 
         self.initialized = True
 
-        response = requests.get(self.options['resourceUrl'])
+        url = helpers.getFile(self.options['awsResourceUrl'])
+        
+        response = requests.get(url)
 
         if not response or not response.text:
             return

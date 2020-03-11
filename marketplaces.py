@@ -16,12 +16,13 @@ import lxml.html as lh
 
 from collections import OrderedDict
 
-import helpers
+import program.library.helpers as helpers
 
-from database import Database
-from helpers import Api
-
+from program.library.database import Database
+from program.library.api import Api
 from program.library.aws import Aws
+from program.library.sendgrid import SendGrid
+from program.library.gmail import Gmail
 
 def getFirst(element, xpath, attribute=None):
     result = ''
@@ -284,11 +285,11 @@ class Craigslist:
                 if wordMatches and (pictureMatches or self.options['onlyOutputPictureMatches'] == 0):
                     self.outputResult(site, item, newItem)
 
-                    siteName = helpers.getDomainName(site)
+                    url = newItem.get('url', '')
                     name = newItem.get('name', '')
                     price = newItem.get('price', '')
 
-                    self.notify(f'One or more new results!\n\nCheck the output directory for details.\n\nSite: {siteName}\nKeyword: {keyword}\nTitle: {name}\nPrice: ${price}')
+                    self.notify('New result', f'Link: {url}\nKeyword: {keyword}\nTitle: {name}\nPrice: ${price}\n\nCheck the output directory for details. This app will not send any more notifications today.')
 
                 newItem['json'] = json.dumps(newItem['json'])
 
@@ -322,14 +323,16 @@ class Craigslist:
         if not thingsToFind:
             return True
 
-        pictureFileName = 'logs/cache/picture'
+        pictureFileName = 'user-data/logs/cache/picture'
 
         if os.path.exists(pictureFileName):
             os.remove(pictureFileName)
         
         helpers.makeDirectory(os.path.dirname(pictureFileName))
 
-        self.api.getBinaryFile(self.pictureUrl, pictureFileName)
+        response = self.api.get(self.pictureUrl, None, False, True)
+
+        helpers.toBinaryFile(response.content, pictureFileName)
 
         if os.stat(pictureFileName).st_size == 0:
             logging.error(f'Failed to download {self.pictureUrl}')
@@ -568,7 +571,7 @@ class Craigslist:
         self.csvToHtml(fileName)
 
     def csvToHtml(self, fileName):
-        csv = helpers.getCsvFileAsDictionary(fileName)
+        csv = helpers.getCsvFile(fileName)
 
         file = helpers.getFile('program/resources/style.html')
 
@@ -623,17 +626,21 @@ class Craigslist:
         htmlFileName = self.options['outputDirectory'] + '/' + htmlFileName
         helpers.toFile(file, htmlFileName)
 
-    def notify(self, message):
+    def notify(self, subject, message):
         if self.hasNotified:
             return
 
         logging.info(message)
 
+        if self.emailer:
+            emailMessage = message.replace('\n', '<br>\n')
+            self.emailer.sendEmail(self.options['fromEmailAddress'], self.options['toEmailAddress'], subject, emailMessage)
+        
         when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
-        helpers.toFile(f'{when} marketplaces.exe: {message}', 'logs/event.txt')
+        helpers.toFile(f'{when} marketplaces.exe: {subject}\n\n{message}', 'user-data/logs/marketplaces.txt')
 
-        helpers.run(['notepad', 'logs/event.txt'], False)
+        helpers.run(['notepad', 'user-data/logs/marketplaces.txt'], False)
 
         self.hasNotified = True
 
@@ -658,13 +665,14 @@ class Craigslist:
         result = fields[-1]
         return helpers.findBetween(result, '', '.')
 
-    def __init__(self, options):
+    def __init__(self, options, emailer):
         self.averageSellingPrice = None
         self.hasNotified = False
         self.pictureUrl = ''
         self.email = ''
         self.page = None
         self.document = None
+        self.emailer = emailer
 
         self.siteInformation = json.loads(helpers.getFile('craigslist.json'))
 
@@ -679,7 +687,7 @@ class Marketplaces:
     def run(self):
         self.initialize()
 
-        for row in helpers.getCsvFileAsDictionary(self.options['inputFile']):
+        for row in helpers.getCsvFile(self.options['inputFile']):
             self.showStatus(row)
             self.doItem(row)
 
@@ -813,7 +821,7 @@ class Marketplaces:
         logging.info('Done')
 
     def initialize(self):
-        helpers.setUpLogging()
+        helpers.setUpLogging('user-data/logs')
 
         logging.info('Starting\n')
 
@@ -831,15 +839,32 @@ class Marketplaces:
             'sites': '',
             'maximumDaysToKeepItems': 60,
             'onlyOutputPictureMatches': 0,
-            'resourceUrl': 'http://temporary.info.tm/Pa6Xxwkua9AjYymMOiB6'
+            'emailProvider': 'sendgrid',
+            'fromEmailAddress': '',
+            'debugEmailAddress': '',
+            'toEmailAddress': '',
+            'awsResourceUrl': 'program/resources/resource',
+            'smartProxyResourceUrl': 'program/resources/resource2',
+            'sendGridResourceUrl': 'program/resources/resource3',
         }
 
         helpers.setOptions('options.ini', self.options)
 
         self.options['sites'] = self.options['sites'].split(',')
 
+        self.credentials = {}
+
+        helpers.setOptions('user-data/credentials/credentials.ini', self.credentials, '')
+
+        self.emailer = None
+        
+        if self.options['emailProvider'] == 'sendgrid':
+            self.emailer = SendGrid(self.options, self.credentials)
+        elif self.options['emailProvider'] == 'gmail':
+            self.emailer = Gmail(self.options)
+        
         self.checkaflip = Checkaflip(self.options)
-        self.craigslist = Craigslist(self.options)
+        self.craigslist = Craigslist(self.options, self.emailer)
 
         self.averageSellingPrice = ''
 

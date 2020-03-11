@@ -22,3 +22,11 @@ https://www.loom.com/share/a066de46befb49eebd3edadd59ea0bf2
     3. The `craigslist ad must not contain` is a semi-colon separated list of phrases to avoid. If at least one of those phrases appears in the Craigslist ad, it skips that ad.
 3. Double click `marketplaces.bat`. It'll write a link to itself in `C:\Users\(your username)\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup`. This allows the app to launch on system startup.
 5. Optionally, double click `show-hide-window.bat` to hide/show the command prompt window
+
+## Options
+
+`options.ini` accepts the following options:
+
+- `emailProvider`: What service to send emails with. Can be `sendgrid` or `gmail`. Default: `sendgrid`.
+- `fromEmailAddress`: What will appear in the "From" field in the emails this app sends.
+- `toEmailAddress`: Where to send the notification emails. Default: (blank).
