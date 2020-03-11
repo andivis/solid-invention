@@ -2,7 +2,6 @@
 /user-data/logs
 /output
 
-logs
 *.sqlite
 
 # Byte-compiled / optimized / DLL files

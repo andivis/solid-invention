@@ -568,15 +568,15 @@ class Craigslist:
         helpers.appendToFile(line, fileName)
         helpers.appendToFile(line, fileName + '-backup.csv')
 
-        self.csvToHtml(fileName)
+        self.csvToHtml(searchItem, fileName)
 
-    def csvToHtml(self, fileName):
+    def csvToHtml(self, searchItem, fileName):
         csv = helpers.getCsvFile(fileName)
 
-        file = helpers.getFile('program/resources/style.html')
+        file = helpers.getFile('program/resources/template.html')
 
-        file += '<table>\n'
-        file += '    <thead>\n'
+        table = '<table>\n'
+        table += '    <thead>\n'
 
         isFirstRow = True
 
@@ -584,42 +584,72 @@ class Craigslist:
             if not row.get('picture', ''):
                 continue
 
-            file += f'        <tr>\n'
+            table += f'        <tr>\n'
 
             if isFirstRow:
                 tag = 'th'
 
                 for column in row:
-                    file += f'            <{tag}>{column}</{tag}>\n'
+                    table += f'            <{tag}>{column}</{tag}>\n'
 
                 isFirstRow = False
                 
-                file += '        </tr>\n'
-                file += '    </thead>\n'
-                file += '    <tbody>\n'
-                file += '        <tr>\n'
+                table += '        </tr>\n'
+                table += '    </thead>\n'
+                table += '    <tbody>\n'
+                table += '        <tr>\n'
             
             for column in row:
 
                 if column == 'url':
-                    row[column] = f'<a href="{row[column]}">{row[column]}</a>'
+                    row[column] = f'<a href="{row[column]}" target="_blank">{row[column]}</a>'
                 elif column == 'email':
                     shortUrl = helpers.findBetween(row[column], 'mailto:', '?')
                     
-                    row[column] = f'<a href="{row[column]}">{shortUrl}</a>'
+                    row[column] = f'''
+                    <p>
+                        <a href="{row[column]}">{shortUrl}</a>
+                    </p>
+                    <p>
+                        <button id="1" type="button" class="btn btn-outline-secondary choose-item unselected" data-email="{shortUrl}">Select</button>
+                    </p>
+                    '''
                 elif column == 'picture':
-                    row[column] = f'<a href="{row[column]}"><img src="{row[column]}"/></a>'
+                    row[column] = f'<a href="{row[column]}" target="_blank"><img src="{row[column]}"/></a>'
                 else:
                     row[column] = html.escape(row[column], quote=False)
 
                 tag = 'td'
                 
-                file += f'            <{tag}>{row[column]}</{tag}>\n'
+                table += f'            <{tag}>{row[column]}</{tag}>\n'
 
-            file += '        </tr>\n'
+            table += '        </tr>\n'
 
-        file += '    </tbody>\n'
-        file += '</table>'
+        table += '    </tbody>\n'
+        table += '</table>'
+
+        emailBodyFile = 'user-data/input/' + searchItem.get('email body', 'email.html')
+        emailSubjectFile = 'user-data/input/' + searchItem.get('email subject', 'subject.txt')
+
+        emailVariables = {
+            'keyword': searchItem.get('keyword', '')
+        }
+
+        message = helpers.getFile(emailBodyFile)
+        message = helpers.replaceVariables(message, emailVariables, '$')
+
+        subject = helpers.getFile(emailSubjectFile)
+        subject = helpers.replaceVariables(subject, emailVariables, '$')
+
+        variables = {
+            'table': table,
+            'subject': subject,
+            'message': message,
+            'subjectEscaped': html.escape(subject),
+            'messageEscaped': html.escape(message)
+        }
+
+        file = helpers.replaceVariables(file, variables, '%')
 
         # Save to file
         htmlFileName = helpers.fileNameOnly(fileName, False) + '.html'

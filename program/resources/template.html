@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+
+    <style>
+        body {
+            margin-top: 15px;
+            margin-bottom: 50px;
+        }
+
+        th {
+            text-transform: capitalize;
+            text-align: center;
+            padding: 5px;
+            border: 1px solid black;
+        }
+
+        td {
+            text-align: center;
+            min-width: 50px;
+            max-width: 100px;
+            overflow: hidden;
+            padding: 5px;
+            border: 1px solid black;
+        }
+
+        img {
+            max-height: 125px;
+        }
+
+        .choose-item {
+            min-width: 75px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="col-8 mx-auto mb-3">
+        <form>
+            <div class="form-group">
+                <label for="exampleFormControlTextarea1">BCC</label>
+                <textarea class="form-control" id="toAddresses" rows="4"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="exampleFormControlInput1">Subject</label>
+                <input type="text" class="form-control" id="subject" value="%subjectEscaped%">
+            </div>
+
+            <div class="form-group">
+                <label for="exampleFormControlTextarea1">Message</label>
+                <textarea class="form-control" id="message" rows="4">%messageEscaped%</textarea>
+            </div>
+
+            <a id="make-email" class="btn btn-danger" href="#" role="button">Email Selected (0)</a>
+        </form>
+    </div>
+
+    %table%
+
+    <!-- Optional JavaScript -->
+    <!-- jQuery first, then Popper.js, then Bootstrap JS -->
+    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+
+    <script>
+        $(document).ready(function () {
+            $('.choose-item').click(function (event) {
+                main();
+            });
+        });
+
+        function main() {
+            console.log('Handler for .click() called.id: ' + event.target.id);
+
+            if ($(event.target).hasClass('unselected')) {
+                event.target.innerHTML = '✓';
+                $(event.target).addClass('btn-success selected');
+                $(event.target).removeClass('btn-outline-secondary unselected');
+            } else {
+                event.target.innerHTML = 'Choose';
+                $(event.target).addClass('btn-outline-secondary unselected');
+                $(event.target).removeClass('btn-success selected');
+            }
+
+            let text = 'Email Selected (' + $('.choose-item.selected').length + ')';
+            $('#make-email').html(text);
+
+            let selectedEmails = getSelectedEmails();
+            let selectedEmailsString = selectedEmails.join('\n');
+            $('#toAddresses').text(selectedEmailsString);
+
+            setLink(selectedEmails);
+        }
+
+        function setLink(selectedEmails) {
+            let string = selectedEmails.join(',');
+
+            let subject = $('#subject').val();
+            let message = $('#message').text();
+
+            subject = encodeURIComponent(subject);
+            message = encodeURIComponent(message);
+
+            link = `mailto:${string}?subject=${subject}&body=${message}`;
+
+            $('#make-email').attr('href', link);
+        }
+
+        function getSelectedEmails() {
+            let toAddresses = [];
+
+            $('.choose-item.selected').each(function (index) {
+                let value = $(this).attr('data-email');
+
+                toAddresses.push(value);
+            });
+
+            return toAddresses;
+        }
+    </script>
+</body>
+
+</html>
