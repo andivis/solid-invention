@@ -220,7 +220,10 @@ class Craigslist:
         resultCount = 0
 
         for city in self.siteInformation['cities']:
-            if '--debug' in sys.argv and (resultCount >= 6 or city.get('url', '') == 'https://albuquerque.craigslist.org'):
+            if resultCount >= self.options['maximumResultsPerKeyword']:
+                logging.info(f'Stopping. Reached maximum of {resultCount} results.')
+
+            if '--debug' in sys.argv and city.get('url', '') == 'https://albuquerque.craigslist.org':
                 logging.info('Stopping')
                 break
 
@@ -860,7 +863,7 @@ class Marketplaces:
             'inputFile': 'input.csv',
             'outputDirectory': 'output',
             'secondsBetweenItems': 30,
-            'sites': '',
+            'sites': 'http://www.checkaflip.com/,https://www.craigslist.org/',
             'maximumDaysToKeepItems': 60,
             'onlyOutputPictureMatches': 0,
             'emailProvider': 'sendgrid',
@@ -872,7 +875,8 @@ class Marketplaces:
             'useProxies': 0,
             'awsResourceUrl': helpers.getFile('program/resources/resource'),
             'sendGridResourceUrl': helpers.getFile('program/resources/resource3'),
-            'maximumNotificationEmailsPerDay': 1
+            'maximumNotificationEmailsPerDay': 1,
+            'maximumResultsPerKeyword': 6
         }
 
         helpers.setOptions('options.ini', self.options)

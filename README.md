@@ -4,6 +4,8 @@
 
 https://www.loom.com/share/a066de46befb49eebd3edadd59ea0bf2
 
+https://www.loom.com/share/9e5e0760ebc34be8acba547a4defd5a9
+
 ## Installation
 
 1. If you don't have it already, install git from https://git-scm.com/downloads
