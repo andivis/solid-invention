@@ -110,7 +110,7 @@
             subject = encodeURIComponent(subject);
             message = encodeURIComponent(message);
 
-            link = `mailto:${string}?subject=${subject}&body=${message}`;
+            link = `mailto:?bcc=${string}&subject=${subject}&body=${message}`;
 
             $('#make-email').attr('href', link);
         }

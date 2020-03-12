@@ -11,10 +11,10 @@ import requests
 import traceback
 import html
 
+from collections import OrderedDict
+
 # pip packages
 import lxml.html as lh
-
-from collections import OrderedDict
 
 import program.library.helpers as helpers
 
@@ -23,6 +23,7 @@ from program.library.api import Api
 from program.library.aws import Aws
 from program.library.sendgrid import SendGrid
 from program.library.gmail import Gmail
+from program.library.other import Internet
 
 def getFirst(element, xpath, attribute=None):
     result = ''
@@ -37,41 +38,6 @@ def getFirst(element, xpath, attribute=None):
 
     return result
 
-def toDollars(s):
-    result = helpers.findBetween(s, '$', '.')
-
-    return int(result)
-
-class Downloader:
-    def get(self, url):
-        userAgent = random.choice(self.userAgentList)
-        
-        self.headers = OrderedDict([
-            ('user-agent', userAgent),
-            ('accept', 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'),
-            ('accept-language', 'en-US,en;q=0.5'),
-            ('dnt', '1'),
-            ('upgrade-insecure-requests', '1'),
-            ('te', 'trailers')
-        ])
-
-        self.proxies = None
-
-        response = ''
-
-        try:
-            logging.debug(f'Getting {url}')
-            response = requests.get(url, headers=self.headers, proxies=self.proxies)
-        except Exception as e:
-            response = ''
-        
-        return response.text
-
-    def __init__(self):
-        self.userAgentList = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:71.0) Gecko/20100101 Firefox/71.0"
-        ]
-
 class Checkaflip:
     def search(self, onItemIndex, site, item, database):
         keyword = item.get('keyword', '')
@@ -81,6 +47,8 @@ class Checkaflip:
         body = {
             'json': s
         }
+
+        self.api.proxies = self.internet.getRandomProxy()
 
         response = self.api.post('/api', body)
 
@@ -157,6 +125,8 @@ class Checkaflip:
 
         self.options = options
 
+        self.internet = Internet(self.options)
+
 class Craigslist:
     def getResults(self, site, item, page, database):
         results = []
@@ -186,7 +156,7 @@ class Craigslist:
             newItem['name'] = getFirst(element, ".//a[contains(@class, 'result-title')]")
                 
             newItem['price'] = getFirst(element, ".//span[contains(@class, 'result-price')]")
-            newItem['price'] = toDollars(newItem['price'])
+            newItem['price'] = self.toDollars(newItem['price'])
             
             newItem['gmDate'] = str(datetime.datetime.utcnow())
 
@@ -213,6 +183,10 @@ class Craigslist:
     def search(self, onItemIndex, site, item, database, averageSellingPrice):
         if not averageSellingPrice:
             return
+
+        self.hasNotifiedForThisSearch = False
+
+        self.api.proxies = self.internet.getRandomProxy()
 
         self.averageSellingPrice = averageSellingPrice
         
@@ -243,11 +217,12 @@ class Craigslist:
         if priceWant < minimumPrice:
             minimumPrice = 1
 
+        resultCount = 0
+
         for city in self.siteInformation['cities']:
-            if '--debug' in sys.argv:
-                if city.get('url', '') == 'https://albanyga.craigslist.org':
-                    logging.info('Stopping')
-                    break
+            if '--debug' in sys.argv and (resultCount >= 6 or city.get('url', '') == 'https://albuquerque.craigslist.org'):
+                logging.info('Stopping')
+                break
 
             cityName = city.get('name', '');
 
@@ -257,7 +232,7 @@ class Craigslist:
             urlToGet = city.get('url', '')
             urlToGet += f'/search/{category}?query={keywords}&sort=rel&min_price={minimumPrice}&max_price={maximumPrice}'
 
-            page = self.downloader.get(urlToGet)
+            page = self.api.get(urlToGet, None, False)
             items = self.getResults(site, item, page, database)
 
             for newItem in items:
@@ -289,7 +264,9 @@ class Craigslist:
                     name = newItem.get('name', '')
                     price = newItem.get('price', '')
 
-                    self.notify('New result', f'Link: {url}\nKeyword: {keyword}\nTitle: {name}\nPrice: ${price}\n\nCheck the output directory for details. This app will not send any more notifications today.')
+                    self.notify('New result', f'Link: {url}\nKeyword: {keyword}\nTitle: {name}\nPrice: ${price}\n\nCheck the output directory for details.')
+
+                    resultCount += 1
 
                 newItem['json'] = json.dumps(newItem['json'])
 
@@ -297,6 +274,11 @@ class Craigslist:
                 database.insert('result', newItem)     
 
             self.waitBetween()
+
+    def toDollars(self, s):
+        result = helpers.findBetween(s, '$', '.')
+
+        return int(result)
 
     def picturePassesFilters(self, item, document):
         result = False
@@ -454,7 +436,7 @@ class Craigslist:
         if not phrasesToAvoid:
             containsPhraseToAvoid = False
 
-        page = self.downloader.get(url)
+        page = self.api.get(url, None, False)
         self.page = page
         document = lh.fromstring(page)
         self.document = document
@@ -657,22 +639,32 @@ class Craigslist:
         helpers.toFile(file, htmlFileName)
 
     def notify(self, subject, message):
-        if self.hasNotified:
+        if self.notificationCount >= self.options['maximumNotificationEmailsPerDay']:
+            return
+
+        if self.hasNotifiedForThisSearch:
             return
 
         logging.info(message)
 
         if self.emailer:
             emailMessage = message.replace('\n', '<br>\n')
+            emailMessage += ' This app will not send any more notifications for this keyword today.'
             self.emailer.sendEmail(self.options['fromEmailAddress'], self.options['toEmailAddress'], subject, emailMessage)
-        
-        when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
-        helpers.toFile(f'{when} marketplaces.exe: {subject}\n\n{message}', 'user-data/logs/marketplaces.txt')
+        # only want one of thse
+        if self.notificationCount == 0:
+            when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
-        helpers.run(['notepad', 'user-data/logs/marketplaces.txt'], False)
+            message += ' This app will not display any more notifications on your computer today.'
+            helpers.toFile(f'{when} marketplaces.exe: {subject}\n\n{message}', 'user-data/logs/marketplaces.txt')
 
-        self.hasNotified = True
+            helpers.run(['notepad', 'user-data/logs/marketplaces.txt'], False)
+
+        # only want to notify once per search
+        self.hasNotifiedForThisSearch = True
+
+        self.notificationCount += 1
 
     def waitBetween(self):
         secondsBetweenItems = self.options['secondsBetweenItems']
@@ -697,7 +689,8 @@ class Craigslist:
 
     def __init__(self, options, emailer):
         self.averageSellingPrice = None
-        self.hasNotified = False
+        self.notificationCount = 0
+        self.hasNotifiedForThisSearch = False
         self.pictureUrl = ''
         self.email = ''
         self.page = None
@@ -706,12 +699,13 @@ class Craigslist:
 
         self.siteInformation = json.loads(helpers.getFile('craigslist.json'))
 
-        self.downloader = Downloader()
         self.api = Api('')
         
         self.options = options
 
         self.aws = Aws(self.options)
+
+        self.internet = Internet(self.options)
 
 class Marketplaces:
     def run(self):
@@ -873,12 +867,18 @@ class Marketplaces:
             'fromEmailAddress': '',
             'debugEmailAddress': '',
             'toEmailAddress': '',
-            'awsResourceUrl': 'program/resources/resource',
-            'smartProxyResourceUrl': 'program/resources/resource2',
-            'sendGridResourceUrl': 'program/resources/resource3',
+            'proxyProvider': 'smartproxy',
+            'proxyListUrl': helpers.getFile('program/resources/resource2'),
+            'useProxies': 0,
+            'awsResourceUrl': helpers.getFile('program/resources/resource'),
+            'sendGridResourceUrl': helpers.getFile('program/resources/resource3'),
+            'maximumNotificationEmailsPerDay': 1
         }
 
         helpers.setOptions('options.ini', self.options)
+
+        if not self.options['useProxies']:
+            self.options['proxyListUrl'] = ''
 
         self.options['sites'] = self.options['sites'].split(',')
 

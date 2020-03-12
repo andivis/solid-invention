@@ -52,7 +52,7 @@ class SendGrid:
 
         if not self.apiKey:
             externalApi = Api('', self.options)
-            url = helpers.getFile(self.options['sendGridResourceUrl'])
+            url = self.options['sendGridResourceUrl']
             self.apiKey = externalApi.get(url, None, False)
 
         if not self.apiKey:

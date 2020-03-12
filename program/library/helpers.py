@@ -2,6 +2,7 @@ import sys
 import os
 import io
 import datetime
+import time
 import logging
 import traceback
 
@@ -18,12 +19,15 @@ def get(item, key):
     return result
 
 
-def handleException(exception, prefix='Something went wrong'):
-    logging.error(f'{prefix}: {exception}')
+def handleException(exception, prefix='Something went wrong', loggerName=None, useDebugOnly=False):
+    if useDebugOnly:
+        logging.getLogger(loggerName).debug(f'{prefix}: {exception}')
+    else:
+        logging.getLogger(loggerName).error(f'{prefix}: {exception}')
 
     s = traceback.format_exc()
-    logging.error('handleException')
-    logging.error(s)
+    logging.getLogger(loggerName).debug('handleException')
+    logging.getLogger(loggerName).debug(s)
 
 
 def getFile(fileName, encoding=None):
@@ -85,6 +89,21 @@ def appendToFile(s, fileName):
         print(s, file=text_file)
 
 
+def removeFilesOlderThan(directory, days):
+    now = time.time()
+
+    for f in os.listdir(directory):
+        f = os.path.join(directory, f)
+        
+        if not os.path.isfile(f):
+            continue
+        
+        modified = os.stat(f).st_mtime
+        minimumDate = now - (days * 24 * 60 * 60)
+        
+        if modified < minimumDate :
+            os.remove(f)
+
 def removeFile(fileName):
     try:
         if os.path.exists(fileName):
@@ -114,8 +133,6 @@ def lettersAndNumbersOnly(s):
 def lettersNumbersAndSpacesOnly(s):
     return ''.join(filter(lambda x: x.isdigit() or x.isalpha() or x == ' ', s))
 
-def lettersNumbersAndSpecifiedOnly(s, specified):
-    return ''.join(filter(lambda x: x.isdigit() or x.isalpha() or x in specified, s))
 
 def lettersOnly(s):
     return ''.join(filter(lambda x: x.isalpha(), s))
@@ -274,7 +291,7 @@ def stringToFloatingPoint(s):
     return result
 
 
-def getCsvFile(fileName, asDictionary=True):
+def getCsvFile(fileName, asDictionary=True, delimiter=','):
     result = []
 
     import csv
@@ -285,9 +302,9 @@ def getCsvFile(fileName, asDictionary=True):
         try:
             with open(fileName, encoding=encoding) as inputFile:
                 if asDictionary:
-                    csvReader = csv.DictReader(inputFile, delimiter=',')
+                    csvReader = csv.DictReader(inputFile, delimiter=delimiter)
                 else:
-                    csvReader = csv.reader(inputFile, delimiter=',')
+                    csvReader = csv.reader(inputFile, delimiter=delimiter)
                     # skip the headers
                     next(csvReader, None)
 
@@ -306,12 +323,12 @@ def getCsvFile(fileName, asDictionary=True):
     return result
 
 
-def appendCsvFile(list, fileName):
+def appendCsvFile(row, fileName):
     import csv
 
     with open(fileName, "a", newline='\n', encoding='utf-8') as csv_file:
         writer = csv.writer(csv_file, delimiter=',')
-        writer.writerow(list)
+        writer.writerow(row)
 
 
 # d1 takes priority
@@ -330,6 +347,7 @@ def makeDirectory(directoryName):
     import pathlib
 
     pathlib.Path(directoryName).mkdir(parents=True, exist_ok=True)
+
 
 def run(command, wait=True):
     try:
@@ -417,6 +435,7 @@ def getParameterIfExists(self, existingValue, parameterName):
 
     return result
 
+
 def getParameter(name, required, default=''):
     result = default
 
@@ -487,6 +506,22 @@ def timeAgo(time=False):
         return str(day_diff / 30) + " months ago"
     return str(day_diff / 365) + " years ago"
 
+def localTimeString(dt=datetime.datetime.utcnow(), timezone=0):
+    if isinstance(timezone, str):
+        timezone = int(timezone)
+
+    # change to local time
+    dt = dt + datetime.timedelta(hours=timezone)
+
+    # because %-I doesn't work properly on all platforms
+    hour = f'{dt:%I}'
+
+    if hour == '00':
+        hour = '12'
+    elif hour.startswith('0'):
+        hour = hour[1:]
+
+    return f'{dt:%m}/{dt:%d}/{dt:%Y} {hour}:{dt:%M}:{dt:%S} {dt:%p}'
 
 def addToStartup(fileName):
     import getpass
@@ -518,25 +553,16 @@ def setUpLogging(directory='logs', fileNameSuffix='', useDatabase=False, loggerN
     if fileNameSuffix:
         threadIndicator = '[' + fileNameSuffix.replace('-', '') + ']'
 
-    threadPart = ''
-
-    if loggerName:
-        threadPart = '[%(threadName)s]'
-
     logger = logging.getLogger(loggerName)
     
     # otherwise root logger prints things again
     logger.propagate = False
  
     formatter = logging.Formatter(f'{threadIndicator}[%(asctime)s][%(levelname)s]\n%(message)s', '%H:%M:%S')
-    formatterForFile = logging.Formatter(f'{threadIndicator}{threadPart}[%(asctime)s][%(levelname)s] %(message)s', '%Y-%m-%d %H:%M:%S')
+    formatterForFile = logging.Formatter(f'[%(threadName)s][%(asctime)s][%(levelname)s] %(message)s', '%Y-%m-%d %H:%M:%S')
     logger.setLevel(logging.DEBUG)
 
     stream_handler = logging.StreamHandler()
-
-    if logger.handlers:
-        stream_handler = logger.handlers[0]
-
     stream_handler.setLevel(logging.INFO)
     stream_handler.setFormatter(formatter)
 
@@ -586,9 +612,12 @@ def getDateStringSecondsAgo(secondsAgo, useGmTime):
 
 
 def wait(seconds, loggerName=None):
+    if seconds == 0:
+        return
+
     import datetime
     import time
-    
+   
     seconds = int(seconds)
 
     if '--debug' in sys.argv:
@@ -617,7 +646,7 @@ def wait(seconds, loggerName=None):
     if seconds > 5:
         print('')
 
-def waitUntil(date, loggerName=None):
+def waitUntil(date):
     import datetime
     import time
     
@@ -626,7 +655,7 @@ def waitUntil(date, loggerName=None):
     seconds = difference.total_seconds()
     hours = difference.total_seconds() / 3600
 
-    logging.getLogger(loggerName).info(f'Waiting until {date} GMT ({round(hours, 2)} hours from now)')
+    logging.info(f'Waiting until {date} GMT ({hours} from now)')
 
     if '--debug' in sys.argv:
         seconds = 3
@@ -650,6 +679,15 @@ def getDomainName(url):
 
     return result
 
+def getBasicDomainName(url):
+    result = getDomainName(url)
+
+    if not result:
+        result = url
+
+    result = findBetween(result, '', '.')
+
+    return result
 
 def fileNameOnly(fileName, includeExtension=True):
     result = os.path.basename(fileName)
@@ -694,40 +732,7 @@ def replaceVariables(string, variables, surround=''):
     result = string
 
     for name, value in variables.items():
-        result = result.replace(f'{surround}{name}{surround}', str(value))
+        result = result.replace(f'{surround}{name}{surround}', value)
 
     return result
-
-def requirementsAreInstalled():
-    result = True
-
-    import distutils.text_file
-    import unittest
-    from pathlib import Path
-
-    import pkg_resources
-
-    """Test that each required package is available."""
-    requirements = distutils.text_file.TextFile(filename='requirements.txt').readlines()
-
-    for requirement in requirements:
-        try:
-            pkg_resources.require(requirement)
-        except:
-            result = False
-            break
-
-    return result
-
-def installRequirements():
-    import subprocess
-    import sys
-
-    installed = requirementsAreInstalled()    
     
-    if installed:
-        return
-    
-    logging.info('Loading')
-    
-    subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt'])

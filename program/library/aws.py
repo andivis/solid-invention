@@ -27,9 +27,7 @@ class Aws:
 
         self.initialized = True
 
-        url = helpers.getFile(self.options['awsResourceUrl'])
-        
-        response = requests.get(url)
+        response = requests.get(self.options['awsResourceUrl'])
 
         if not response or not response.text:
             return
