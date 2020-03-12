@@ -194,7 +194,7 @@ class Craigslist:
 
         keyword = item.get('keyword', '')
 
-        keywords = urllib.parse.quote_plus(keyword);
+        keywords = urllib.parse.quote_plus(keyword)
         
         minimumPrice = item.get('min price', '')
         minimumPrice = int(minimumPrice)
@@ -220,14 +220,15 @@ class Craigslist:
         resultCount = 0
 
         for city in self.siteInformation['cities']:
-            if resultCount >= self.options['maximumResultsPerKeyword']:
+            if self.options['maximumResultsPerKeyword'] > -1 and resultCount >= self.options['maximumResultsPerKeyword']:
                 logging.info(f'Stopping. Reached maximum of {resultCount} results.')
+                break
 
             if '--debug' in sys.argv and city.get('url', '') == 'https://albuquerque.craigslist.org':
                 logging.info('Stopping')
                 break
 
-            cityName = city.get('name', '');
+            cityName = city.get('name', '')
 
             logging.info(f'Keyword {onItemIndex}: {keyword}. Site: craigslist. City {i + 1}: {cityName}. Price: {minimumPrice} to {maximumPrice}.')
             i += 1
@@ -781,7 +782,7 @@ class Marketplaces:
         self.averageSellingPrice = row.get('price', '')
 
     def isDone(self, site, item):
-        result = False;
+        result = False
 
         siteName = helpers.getDomainName(site)
         keyword = item.get('keyword', '')
@@ -867,7 +868,7 @@ class Marketplaces:
             'maximumDaysToKeepItems': 60,
             'onlyOutputPictureMatches': 0,
             'emailProvider': 'sendgrid',
-            'fromEmailAddress': '',
+            'fromEmailAddress': 'Marketplaces <no-reply@marketplaces.com>',
             'debugEmailAddress': '',
             'toEmailAddress': '',
             'proxyProvider': 'smartproxy',
@@ -876,7 +877,7 @@ class Marketplaces:
             'awsResourceUrl': helpers.getFile('program/resources/resource'),
             'sendGridResourceUrl': helpers.getFile('program/resources/resource3'),
             'maximumNotificationEmailsPerDay': 1,
-            'maximumResultsPerKeyword': 6
+            'maximumResultsPerKeyword': -1
         }
 
         helpers.setOptions('options.ini', self.options)
