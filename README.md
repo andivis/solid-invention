@@ -32,3 +32,4 @@ https://www.loom.com/share/9e5e0760ebc34be8acba547a4defd5a9
 - `emailProvider`: What service to send emails with. Can be `sendgrid` or `gmail`. Default: `sendgrid`.
 - `fromEmailAddress`: What will appear in the "From" field in the emails this app sends.
 - `toEmailAddress`: Where to send the notification emails. Default: (blank).
+- `maximumResultsPerKeyword`: How many matching results to get for each keyword. Default: (no limit).
