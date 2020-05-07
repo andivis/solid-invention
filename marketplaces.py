@@ -245,8 +245,8 @@ class Craigslist:
                 
                 # no point looking these up if words don't match
                 if wordMatches:
-                    self.email = self.getEmail(newItem, self.document)
-                    pictureMatches = self.picturePassesFilters(item, self.document)
+                    self.email = self.getEmail(newItem, self.document)                    
+                    pictureMatches = self.picturePassesFilters(item, self.document)                     
 
                 jsonColumn = {
                     'email': self.email,
@@ -352,6 +352,7 @@ class Craigslist:
             
             for toFind in thingsToFind.split(';'):
                 if toFind.lower().strip() == name:
+                    self.pictureContains = toFind
                     nameMatches = True
                     break
 
@@ -409,6 +410,7 @@ class Craigslist:
         self.page = None
         self.document = None
         self.thingsInImage = []
+        self.pictureContains = ''
         self.pictureConfidence = ''
 
         phrasesToFind = searchItem.get('craigslist ad must contain', '')
@@ -511,6 +513,7 @@ class Craigslist:
                 headers.append(siteName + ' price')
 
             headers.append('profit')
+            headers.append('picture contains')
             headers.append('picture confidence %')
             headers.append('url')
             headers.append('email')
@@ -542,6 +545,7 @@ class Craigslist:
         
         fields.append(str(profit))
         
+        fields.append(self.pictureContains)
         fields.append(self.pictureConfidence)
         
         fields.append(newItem.get('url', ''))
